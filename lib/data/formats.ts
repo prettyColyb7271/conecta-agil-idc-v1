@@ -98,11 +98,34 @@ function drawFooter(page: PDFPage, font: PDFFont, text: string, notices: string[
 
 async function generatedTemplate(code: FormatCode, data: Data, expediente: { id?: string; folio: string; tramite: string; cliente_nombre: string; created_at: string }, notices: string[]): Promise<Buffer> {
   if (code === "F-02" || code === "F-03" || code === "F-04" || code === "F-06") {
+    const database = getDatabase();
+    const documents = database.prepare(`
+      SELECT er.requirement_code AS codigo, er.status AS estado, rc.name AS nombre,
+             dv.sha256, dv.version_number AS version
+      FROM expediente_requirements er
+      JOIN requirement_catalog rc ON rc.code = er.requirement_code
+      LEFT JOIN document_versions dv ON dv.id = er.version_id
+      WHERE er.expediente_id = ? AND er.requirement_code LIKE 'R%'
+      ORDER BY er.requirement_code
+    `).all(expediente.id) as Array<{ codigo: string; estado: string; nombre: string; sha256: string | null; version: number | null }>;
     const result = await renderDocx(code as DocxFormat, {
       folio: expediente.folio, tramite: expediente.tramite, fecha: new Date().toLocaleDateString("es-MX"),
-      cliente: get(data, "solicitante", "nombre_razon_social"), rpu: get(data, "servicio_actual", "rpu"),
-      tarifa: get(data, "servicio_actual", "tarifa"), tension: get(data, "servicio_actual", "nivel_tension_suministro"),
-      enlace_cfe: get(data, "representacion", "enlace_cfe"), requisitos: [],
+      cliente: {
+        nombre: get(data, "solicitante", "nombre_razon_social"),
+        tipo_persona: get(data, "solicitante", "tipo_persona"),
+      },
+      servicio: {
+        rpu: get(data, "servicio_actual", "rpu"),
+        tarifa: get(data, "servicio_actual", "tarifa"),
+        domicilio: get(data, "servicio_actual", "domicilio"),
+      },
+      central: {
+        tension: get(data, "servicio_actual", "nivel_tension_suministro"),
+        tecnologia: get(data, "central", "tecnologia"),
+        capacidad_kw: get(data, "central", "capacidad_bruta_kw"),
+      },
+      responsable_cfe: { nombre: get(data, "representacion", "enlace_cfe"), correo: get(data, "representacion", "enlace_cfe_correo") },
+      documentos: documents.map((document) => ({ ...document, sha256_corto: document.sha256?.slice(0, 12) })),
     });
     notices.push(...result.missing.map((field) => `Falta el campo ${field}; se dejó ______.`));
     return result.bytes;

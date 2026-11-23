@@ -4,17 +4,12 @@ import path from "node:path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { getDatabase } from "@/lib/db/sqlite";
-import { CatalogValidationError, validateTemplateMarks } from "@/lib/data/template-catalog";
+import { CatalogValidationError, requiredMarksForFormat, validateTemplateMarks } from "@/lib/data/template-catalog";
 export { extractTemplateMarks, MARK_CATALOG } from "@/lib/data/template-catalog";
 
 export const DOCX_FORMATS = ["F-02", "F-03", "F-04", "F-06"] as const;
 export const TEMPLATE_CODES = ["F-02", "F-03", "F-04", "F-05", "F-06"] as const;
 export type DocxFormat = typeof DOCX_FORMATS[number];
-export const TEMPLATE_FIELDS = [
-  "folio", "fecha", "cliente.nombre", "cliente.rfc", "cliente.domicilio", "cliente.correo",
-  "apoderado.nombre", "apoderado.cargo", "rpu", "tarifa", "tension", "tramite",
-  "responsable.nombre", "responsable.correo", "enlace_cfe", "requisitos",
-] as const;
 const FILES: Record<string, string> = {
   "F-02": "F-02_carta_poder.docx", "F-03": "F-03_carta_poder_uiie.docx",
   "F-04": "F-04_ficha.docx", "F-06": "F-06_caratula.docx",
@@ -46,17 +41,44 @@ export async function renderDocx(code: DocxFormat, data: Record<string, unknown>
   assertSafeDocx(bytes, file);
   const zip = new PizZip(bytes);
   const cliente = typeof data.cliente === "object" && data.cliente ? data.cliente as Record<string, unknown> : { nombre: data.cliente };
+  const rawDocuments = Array.isArray(data.documentos) ? data.documentos : (Array.isArray(data.lista) ? data.lista : (Array.isArray(data.requisitos) ? data.requisitos : []));
+  const documents = rawDocuments.map((item) => {
+    const source = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    return {
+      documento: {
+        codigo: source.codigo ?? source.code ?? source.id ?? "______",
+        estado: source.estado ?? source.status ?? "______",
+        nombre: source.nombre ?? source.name ?? "______",
+        paginas: source.paginas ?? source.pages ?? "______",
+        rpu: source.rpu ?? "______",
+        sha256_corto: source.sha256_corto ?? source.sha256 ?? "______",
+      },
+    };
+  });
+  const responsableCliente = typeof data.responsable_cliente === "object" && data.responsable_cliente ? data.responsable_cliente as Record<string, unknown> : {};
+  const responsableCfe = typeof data.responsable_cfe === "object" && data.responsable_cfe ? data.responsable_cfe as Record<string, unknown> : {};
+  const servicio = typeof data.servicio === "object" && data.servicio ? data.servicio as Record<string, unknown> : {};
+  const central = typeof data.central === "object" && data.central ? data.central as Record<string, unknown> : {};
+  const expediente = typeof data.expediente === "object" && data.expediente ? data.expediente as Record<string, unknown> : {};
   const values: Record<string, unknown> = {
-    folio: data.folio || "______", fecha: data.fecha || "______", tramite: data.tramite || "______",
-    rpu: data.rpu || "______", tarifa: data.tarifa || "______", tension: data.tension || "______",
-    enlace_cfe: data.enlace_cfe || "______", cliente: { nombre: cliente.nombre || "______", rfc: cliente.rfc || "______", domicilio: cliente.domicilio || "______", correo: cliente.correo || "______" },
-    apoderado: { nombre: "______", cargo: "______" }, responsable: { nombre: "______", correo: "______" },
-    lista: Array.isArray(data.lista) ? data.lista : (Array.isArray(data.requisitos) ? data.requisitos : []),
+    expediente: { folio: expediente.folio ?? data.folio ?? "______", fecha: expediente.fecha ?? data.fecha ?? "______", tramite: expediente.tramite ?? data.tramite ?? "______" },
+    cliente: { nombre: cliente.nombre || "______", tipo_persona: cliente.tipo_persona || "______", rfc: cliente.rfc || "______", domicilio: cliente.domicilio || "______", correo: cliente.correo || "______" },
+    firma: { lugar: data.lugar || "______", fecha_corta: data.fecha || "______", fecha_larga: data.fecha || "______" },
+    apoderado: { nombre: (data.apoderado as Record<string, unknown> | undefined)?.nombre || "______" },
+    testigo1: { nombre: (data.testigo1 as Record<string, unknown> | undefined)?.nombre || "______" },
+    testigo2: { nombre: (data.testigo2 as Record<string, unknown> | undefined)?.nombre || "______" },
+    servicio: { rpu: servicio.rpu ?? data.rpu ?? "______", tarifa: servicio.tarifa ?? data.tarifa ?? "______", domicilio: servicio.domicilio ?? "______" },
+    central: { tension: central.tension ?? data.tension ?? "______", tecnologia: central.tecnologia ?? data.tecnologia ?? "______", capacidad_kw: central.capacidad_kw ?? data.capacidad_kw ?? "______" },
+    responsable_cliente: { nombre: responsableCliente.nombre ?? "______", correo: responsableCliente.correo ?? "______", telefono: responsableCliente.telefono ?? "______" },
+    responsable_cfe: { nombre: responsableCfe.nombre ?? data.enlace_cfe ?? "______", correo: responsableCfe.correo ?? data.enlace_cfe_correo ?? "______" },
+    gestor: data.gestor ?? { nombre: "______" },
+    ingeniero: data.ingeniero ?? { nombre: "______" },
+    plantilla: { version: data.template_version ?? "______" },
+    documentos: documents,
   };
-  const missing = TEMPLATE_FIELDS.filter((field) => {
-    if (field === "requisitos") return false;
+  const missing = requiredMarksForFormat(code).filter((field) => {
     const [section, key] = field.split(".");
-    const value = key ? (values[section] as Record<string, unknown>)?.[key] : values[field];
+    const value = key ? (values[section] as Record<string, unknown> | undefined)?.[key] : values[field];
     return String(value ?? "").trim() === "______" || String(value ?? "").trim() === "";
   });
   try {

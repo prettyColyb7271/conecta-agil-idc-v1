@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { getDatabase, migrateDatabase } from "./sqlite-runtime";
 
 const TEST_PASSWORD = "ConectaLocal-2026!";
@@ -41,16 +43,45 @@ const users = [
   ["seguridad.demo@example.invalid", "Seguridad Demo Ficticio", "admin_seguridad"],
 ] as const;
 
+const defaultTemplates = [
+  ["F-02", "F-02_carta_poder.docx"],
+  ["F-03", "F-03_carta_poder_uiie.docx"],
+  ["F-04", "F-04_ficha.docx"],
+  ["F-05", "F-05_memoria_calculo.docx"],
+  ["F-06", "F-06_caratula.docx"],
+] as const;
+
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16);
   const derived = crypto.scryptSync(password, salt, 64);
   return `scrypt$${salt.toString("hex")}$${derived.toString("hex")}`;
 }
 
+function seedDefaultTemplates(database: ReturnType<typeof getDatabase>, now: string): void {
+  const root = path.join(process.cwd(), "templates");
+  for (const [code, filename] of defaultTemplates) {
+    const bytes = fs.readFileSync(path.join(root, filename));
+    const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+    const current = database.prepare("SELECT id, version, sha256 FROM templates WHERE code = ? AND active = 1 ORDER BY version DESC LIMIT 1").get(code) as { id: string; version: number; sha256: string } | undefined;
+    if (current?.sha256 === sha256) continue;
+    const sameVersion = database.prepare("SELECT id FROM templates WHERE code = ? AND sha256 = ? LIMIT 1").get(code, sha256) as { id: string } | undefined;
+    database.prepare("UPDATE templates SET active = 0 WHERE code = ?").run(code);
+    if (sameVersion) {
+      database.prepare("UPDATE templates SET active = 1 WHERE id = ?").run(sameVersion.id);
+      continue;
+    }
+    const version = Number(database.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM templates WHERE code = ?").get(code)?.version ?? 0) + 1;
+    database.prepare(
+      "INSERT INTO templates (id, code, filename, version, sha256, storage_key, size_bytes, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
+    ).run(crypto.randomUUID(), code, filename, version, sha256, `templates/${filename}`, bytes.length, now);
+  }
+}
+
 export function seedDatabase(): { users: number; requirements: number; expedientes: number; gates: number } {
   migrateDatabase();
   const database = getDatabase();
   const now = new Date().toISOString();
+  seedDefaultTemplates(database, now);
   const userIds = new Map<string, string>();
   const findUser = database.prepare("SELECT id FROM users WHERE email = ?");
   const insertUser = database.prepare(

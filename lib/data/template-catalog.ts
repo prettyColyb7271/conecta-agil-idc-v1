@@ -3,10 +3,15 @@ import catalog from "@/templates/marcas.catalogo.json";
 export type CatalogFormat = { marks: string[]; required: string[] };
 export type Catalog = {
   formats: Record<string, CatalogFormat>;
+  formatos?: Record<string, { obligatorias: string[]; opcionales?: string[]; ciclos?: string[] }>;
   cycles?: Record<string, { itemMarks: string[] }> | Array<{ nombre: string; campos: string[] }>;
   ciclos?: Array<{ nombre: string; campos: string[] }>;
 };
 export const MARK_CATALOG = catalog as Catalog;
+
+export function requiredMarksForFormat(code: string): string[] {
+  return MARK_CATALOG.formatos?.[code]?.obligatorias ?? MARK_CATALOG.formats[code]?.required ?? [];
+}
 
 export class CatalogValidationError extends Error {}
 

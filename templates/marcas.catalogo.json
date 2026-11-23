@@ -1,88 +1,856 @@
 {
   "version": 2,
-  "delimitadores": ["{{", "}}"],
+  "delimitadores": [
+    "{{",
+    "}}"
+  ],
   "nullGetter": "______",
   "convencion": "minúsculas, snake_case, máximo dos niveles y listas en plural",
   "marcas": [
-    {"marca":"expediente.folio","tipo":"texto","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"IDC-2026-0001"},
-    {"marca":"expediente.tramite","tipo":"texto","obligatoria_en":["F-02","F-03","F-06"],"sensible":false,"ejemplo":"Interconexion FV MT"},
-    {"marca":"expediente.fecha","tipo":"fecha","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"23/11/2026"},
-    {"marca":"documento.codigo","tipo":"texto","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"R01"},
-    {"marca":"documento.estado","tipo":"texto","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"validado_idc"},
-    {"marca":"documento.version","tipo":"entero","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"1"},
-    {"marca":"documento.sha256_corto","tipo":"hash","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"a1b2c3d4e5f6"},
-    {"marca":"plantilla.codigo","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"F-02"},
-    {"marca":"plantilla.version","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"v1"},
-    {"marca":"solicitante.tipo_persona","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"moral"},
-    {"marca":"cliente.tipo_persona","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"PERSONA FISICA"},
-    {"marca":"solicitante.nombre_razon_social","tipo":"texto","obligatoria_en":["F-02","F-03","F-04"],"sensible":false,"ejemplo":"Empresa Solar Ficticia S.A. de C.V."},
-    {"marca":"solicitante.rfc","tipo":"texto","obligatoria_en":["F-02"],"sensible":true,"ejemplo":"XAXX010101000"},
-    {"marca":"solicitante.curp","tipo":"texto","obligatoria_en":[],"sensible":true,"ejemplo":"GODE800101HSONMN09"},
-    {"marca":"solicitante.domicilio","tipo":"texto","obligatoria_en":["F-04"],"sensible":true,"ejemplo":"Calle Ficticia 123, Hermosillo"},
-    {"marca":"representante.nombre","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Representante Ficticio"},
-    {"marca":"otorgante.nombre","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"Empresa Solar Ficticia S.A. de C.V."},
-    {"marca":"otorgante.identificacion","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":true,"ejemplo":"INE-FICTICIA-001"},
-    {"marca":"apoderado.nombre","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"Apoderado Ficticio"},
-    {"marca":"apoderado.cargo","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Representante legal"},
-    {"marca":"apoderado.identificacion","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":true,"ejemplo":"INE-FICTICIA-002"},
-    {"marca":"testigo1.nombre","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"Testigo Ficticio Uno"},
-    {"marca":"testigo1.identificacion","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":true,"ejemplo":"INE-FICTICIA-003"},
-    {"marca":"testigo2.nombre","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"Testigo Ficticio Dos"},
-    {"marca":"testigo2.identificacion","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":true,"ejemplo":"INE-FICTICIA-004"},
-    {"marca":"contacto.nombre","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"Contacto Cliente Ficticio"},
-    {"marca":"contacto.correo","tipo":"correo","obligatoria_en":["F-04"],"sensible":true,"ejemplo":"cliente.demo@example.invalid"},
-    {"marca":"contacto.telefono","tipo":"texto","obligatoria_en":[],"sensible":true,"ejemplo":"555-000-0000"},
-    {"marca":"servicio.rpu","tipo":"texto","obligatoria_en":["F-04"],"sensible":true,"ejemplo":"123456789012"},
-    {"marca":"servicio.tarifa","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"GDMTH"},
-    {"marca":"servicio.titular","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"Empresa Solar Ficticia S.A. de C.V."},
-    {"marca":"central.tecnologia","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"solar"},
-    {"marca":"central.capacidad_kw","tipo":"decimal_2","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"187.50"},
-    {"marca":"central.tension","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"13.8 kV"},
-    {"marca":"cfe.area_destinataria","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"CFE Suministrador de Servicios Basicos"},
-    {"marca":"cfe.enlace_nombre","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"Enlace Empresarial Ficticio"},
-    {"marca":"cfe.enlace_correo","tipo":"correo","obligatoria_en":[],"sensible":false,"ejemplo":"enlace.cfe@example.invalid"},
-    {"marca":"cfe.enlace_telefono","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"555-000-0001"},
-    {"marca":"enlace_cfe_correo","tipo":"correo","obligatoria_en":["F-04"],"sensible":true,"ejemplo":"enlace.cfe@example.invalid"},
-    {"marca":"gestor.nombre","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Gestor IDC Demo"},
-    {"marca":"coordinador.nombre","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Gestor IDC Demo"},
-    {"marca":"firma.lugar","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"Hermosillo, Sonora"},
-    {"marca":"firma.fecha_larga","tipo":"fecha_larga","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"23 de noviembre de 2026"},
-    {"marca":"firma.fecha_corta","tipo":"fecha","obligatoria_en":[],"sensible":false,"ejemplo":"23/11/2026"},
-    {"marca":"revision.observaciones","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Sin observaciones"},
-    {"marca":"responsable_cliente.nombre","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"UVIE Ficticio"},
-    {"marca":"responsable_cliente.correo","tipo":"correo","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"u vie@example.invalid"},
-    {"marca":"responsable_cliente.telefono","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"555-000-0002"},
-    {"marca":"responsable_cfe.nombre","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Enlace CFE Ficticio"},
-    {"marca":"responsable_cfe.correo","tipo":"correo","obligatoria_en":[],"sensible":false,"ejemplo":"cfe@example.invalid"},
-    {"marca":"responsable_cfe.telefono","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"555-000-0003"},
-    {"marca":"memoria.consumo_kwh","tipo":"decimal_2","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"12500.00"},
-    {"marca":"memoria.potencia_requerida_kw","tipo":"decimal_2","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"180.00"},
-    {"marca":"memoria.numero_modulos","tipo":"entero","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"375"},
-    {"marca":"memoria.produccion_kwh","tipo":"decimal_2","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"28000.00"},
-    {"marca":"memoria.inversor","tipo":"texto","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"Inversor Ficticio 250 kW"},
-    {"marca":"memoria.relacion_dc_ac","tipo":"decimal_2","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"1.20"},
-    {"marca":"memoria.strings","tipo":"lista","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"String A"},
-    {"marca":"ingeniero.nombre","tipo":"texto","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"Ingeniero Ficticio"},
-    {"marca":"documentos","tipo":"lista","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"R01"}
+    {
+      "marca": "expediente.folio",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "IDC-2026-0001"
+    },
+    {
+      "marca": "expediente.tramite",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "Interconexion FV MT"
+    },
+    {
+      "marca": "expediente.fecha",
+      "tipo": "fecha",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "23/11/2026"
+    },
+    {
+      "marca": "documento.codigo",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "R01"
+    },
+    {
+      "marca": "documento.estado",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "validado_idc"
+    },
+    {
+      "marca": "documento.version",
+      "tipo": "entero",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "1"
+    },
+    {
+      "marca": "documento.sha256_corto",
+      "tipo": "hash",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "a1b2c3d4e5f6"
+    },
+    {
+      "marca": "plantilla.codigo",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "F-02"
+    },
+    {
+      "marca": "plantilla.version",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "v1"
+    },
+    {
+      "marca": "cliente.tipo_persona",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "PERSONA FISICA"
+    },
+    {
+      "marca": "representante.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "Representante Ficticio"
+    },
+    {
+      "marca": "otorgante.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "Empresa Solar Ficticia S.A. de C.V."
+    },
+    {
+      "marca": "otorgante.identificacion",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": true,
+      "ejemplo": "INE-FICTICIA-001"
+    },
+    {
+      "marca": "apoderado.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "Apoderado Ficticio"
+    },
+    {
+      "marca": "apoderado.cargo",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "Representante legal"
+    },
+    {
+      "marca": "apoderado.identificacion",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": true,
+      "ejemplo": "INE-FICTICIA-002"
+    },
+    {
+      "marca": "testigo1.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "Testigo Ficticio Uno"
+    },
+    {
+      "marca": "testigo1.identificacion",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": true,
+      "ejemplo": "INE-FICTICIA-003"
+    },
+    {
+      "marca": "testigo2.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "Testigo Ficticio Dos"
+    },
+    {
+      "marca": "testigo2.identificacion",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": true,
+      "ejemplo": "INE-FICTICIA-004"
+    },
+    {
+      "marca": "contacto.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "Contacto Cliente Ficticio"
+    },
+    {
+      "marca": "contacto.correo",
+      "tipo": "correo",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": true,
+      "ejemplo": "cliente.demo@example.invalid"
+    },
+    {
+      "marca": "contacto.telefono",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": true,
+      "ejemplo": "555-000-0000"
+    },
+    {
+      "marca": "servicio.rpu",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": true,
+      "ejemplo": "123456789012"
+    },
+    {
+      "marca": "servicio.tarifa",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "GDMTH"
+    },
+    {
+      "marca": "servicio.titular",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "Empresa Solar Ficticia S.A. de C.V."
+    },
+    {
+      "marca": "central.tecnologia",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "solar"
+    },
+    {
+      "marca": "central.capacidad_kw",
+      "tipo": "decimal_2",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "187.50"
+    },
+    {
+      "marca": "central.tension",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "13.8 kV"
+    },
+    {
+      "marca": "cfe.area_destinataria",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "CFE Suministrador de Servicios Basicos"
+    },
+    {
+      "marca": "cfe.enlace_nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "Enlace Empresarial Ficticio"
+    },
+    {
+      "marca": "cfe.enlace_correo",
+      "tipo": "correo",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "enlace.cfe@example.invalid"
+    },
+    {
+      "marca": "cfe.enlace_telefono",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "555-000-0001"
+    },
+    {
+      "marca": "gestor.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "Gestor IDC Demo"
+    },
+    {
+      "marca": "coordinador.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "Gestor IDC Demo"
+    },
+    {
+      "marca": "firma.lugar",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "Hermosillo, Sonora"
+    },
+    {
+      "marca": "firma.fecha_larga",
+      "tipo": "fecha_larga",
+      "obligatoria_en": [
+        "F-02",
+        "F-03"
+      ],
+      "sensible": false,
+      "ejemplo": "23 de noviembre de 2026"
+    },
+    {
+      "marca": "firma.fecha_corta",
+      "tipo": "fecha",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "23/11/2026"
+    },
+    {
+      "marca": "revision.observaciones",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "Sin observaciones"
+    },
+    {
+      "marca": "responsable_cliente.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "UVIE Ficticio"
+    },
+    {
+      "marca": "responsable_cliente.correo",
+      "tipo": "correo",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "u vie@example.invalid"
+    },
+    {
+      "marca": "responsable_cliente.telefono",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "555-000-0002"
+    },
+    {
+      "marca": "responsable_cfe.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "Enlace CFE Ficticio"
+    },
+    {
+      "marca": "responsable_cfe.correo",
+      "tipo": "correo",
+      "obligatoria_en": [
+        "F-04"
+      ],
+      "sensible": false,
+      "ejemplo": "cfe@example.invalid"
+    },
+    {
+      "marca": "responsable_cfe.telefono",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": false,
+      "ejemplo": "555-000-0003"
+    },
+    {
+      "marca": "memoria.consumo_kwh",
+      "tipo": "decimal_2",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "12500.00"
+    },
+    {
+      "marca": "memoria.potencia_requerida_kw",
+      "tipo": "decimal_2",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "180.00"
+    },
+    {
+      "marca": "memoria.numero_modulos",
+      "tipo": "entero",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "375"
+    },
+    {
+      "marca": "memoria.produccion_kwh",
+      "tipo": "decimal_2",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "28000.00"
+    },
+    {
+      "marca": "memoria.inversor",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "Inversor Ficticio 250 kW"
+    },
+    {
+      "marca": "memoria.relacion_dc_ac",
+      "tipo": "decimal_2",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "1.20"
+    },
+    {
+      "marca": "memoria.strings",
+      "tipo": "lista",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "String A"
+    },
+    {
+      "marca": "ingeniero.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-05"
+      ],
+      "sensible": false,
+      "ejemplo": "Ingeniero Ficticio"
+    },
+    {
+      "marca": "documentos",
+      "tipo": "lista",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "R01"
+    },
+    {
+      "marca": "cliente.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-02",
+        "F-03",
+        "F-04",
+        "F-05",
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "Empresa Solar Ficticia S.A. de C.V."
+    },
+    {
+      "marca": "cliente.rfc",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": true,
+      "ejemplo": "XAXX010101000"
+    },
+    {
+      "marca": "cliente.curp",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": true,
+      "ejemplo": "GODE800101HSONMN09"
+    },
+    {
+      "marca": "cliente.domicilio",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": true,
+      "ejemplo": "Calle Ficticia 123, Hermosillo"
+    },
+    {
+      "marca": "documento.nombre",
+      "tipo": "texto",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "______"
+    },
+    {
+      "marca": "documento.paginas",
+      "tipo": "entero",
+      "obligatoria_en": [
+        "F-06"
+      ],
+      "sensible": false,
+      "ejemplo": "______"
+    },
+    {
+      "marca": "documento.rpu",
+      "tipo": "texto",
+      "obligatoria_en": [],
+      "sensible": true,
+      "ejemplo": "______"
+    }
   ],
   "ciclos": [
-    {"nombre":"documentos","campos":["documento.codigo","documento.estado","documento.version","documento.sha256_corto","code","status","version"]},
-    {"nombre":"strings","campos":["memoria.string_id","memoria.modulos","memoria.inversor","memoria.potencia_kw"]},
-    {"nombre":"lista","campos":["code","status","version","sha256_corto"]}
+    {
+      "nombre": "documentos",
+      "campos": [
+        "documento.codigo",
+        "documento.estado",
+        "documento.nombre",
+        "documento.paginas",
+        "documento.rpu",
+        "documento.sha256_corto"
+      ]
+    },
+    {
+      "nombre": "strings",
+      "campos": [
+        "memoria.string_id",
+        "memoria.modulos",
+        "memoria.inversor",
+        "memoria.potencia_kw"
+      ]
+    }
   ],
   "formatos": {
-    "F-02":{"obligatorias":["otorgante.nombre","apoderado.nombre","testigo1.nombre","testigo2.nombre","firma.lugar","firma.fecha_larga"],"opcionales":["solicitante.rfc","apoderado.cargo","cfe.area_destinataria"],"ciclos":[],"firmas":["otorgante","apoderado","testigo1","testigo2"]},
-    "F-03":{"obligatorias":["otorgante.nombre","apoderado.nombre","testigo1.nombre","testigo2.nombre","firma.lugar","firma.fecha_larga"],"opcionales":["apoderado.cargo","cfe.area_destinataria"],"ciclos":[],"firmas":["otorgante","apoderado","testigo1","testigo2"]},
-    "F-04":{"obligatorias":["servicio.titular","servicio.rpu","servicio.tarifa","central.tension","responsable_cliente.nombre"],"opcionales":["responsable_cliente.correo","responsable_cliente.telefono","responsable_cfe.nombre","responsable_cfe.correo","responsable_cfe.telefono"],"ciclos":[],"firmas":[]},
-    "F-05":{"obligatorias":["central.capacidad_kw","memoria.consumo_kwh","memoria.potencia_requerida_kw","memoria.numero_modulos","memoria.produccion_kwh","memoria.inversor","memoria.relacion_dc_ac"],"opcionales":["memoria.strings"],"ciclos":["strings"],"firmas":[]},
-    "F-06":{"obligatorias":["expediente.folio","expediente.tramite","expediente.fecha"],"opcionales":[],"ciclos":["documentos"],"firmas":[]}
+    "F-02": {
+      "obligatorias": [
+        "cliente.nombre",
+        "apoderado.nombre"
+      ],
+      "opcionales": [
+        "cliente.tipo_persona",
+        "firma.lugar",
+        "firma.fecha_corta",
+        "expediente.folio"
+      ],
+      "ciclos": [],
+      "firmas": [
+        "otorgante",
+        "apoderado",
+        "testigo1",
+        "testigo2"
+      ]
+    },
+    "F-03": {
+      "obligatorias": [
+        "cliente.nombre",
+        "apoderado.nombre"
+      ],
+      "opcionales": [
+        "cliente.tipo_persona",
+        "firma.lugar",
+        "firma.fecha_corta",
+        "servicio.rpu",
+        "servicio.domicilio"
+      ],
+      "ciclos": [],
+      "firmas": [
+        "otorgante",
+        "apoderado",
+        "testigo1",
+        "testigo2"
+      ]
+    },
+    "F-04": {
+      "obligatorias": [
+        "cliente.nombre",
+        "servicio.rpu",
+        "central.tension",
+        "responsable_cliente.nombre",
+        "responsable_cfe.correo"
+      ],
+      "opcionales": [
+        "firma.fecha_corta",
+        "gestor.nombre",
+        "responsable_cliente.correo",
+        "responsable_cliente.telefono",
+        "responsable_cfe.nombre",
+        "servicio.tarifa",
+        "servicio.domicilio",
+        "central.tecnologia",
+        "central.capacidad_kw"
+      ],
+      "ciclos": [],
+      "firmas": []
+    },
+    "F-05": {
+      "obligatorias": [
+        "central.capacidad_kw",
+        "memoria.consumo_kwh",
+        "memoria.potencia_requerida_kw",
+        "memoria.numero_modulos",
+        "memoria.produccion_kwh",
+        "memoria.inversor",
+        "memoria.relacion_dc_ac"
+      ],
+      "opcionales": [
+        "memoria.strings"
+      ],
+      "ciclos": [
+        "strings"
+      ],
+      "firmas": []
+    },
+    "F-06": {
+      "obligatorias": [
+        "expediente.folio",
+        "cliente.nombre",
+        "expediente.tramite"
+      ],
+      "opcionales": [
+        "expediente.fecha",
+        "central.capacidad_kw",
+        "gestor.nombre"
+      ],
+      "ciclos": [
+        "documentos"
+      ],
+      "firmas": []
+    }
   },
   "formats": {
-    "F-02":{"template":"F-02_carta_poder.docx","marks":["cliente.nombre","cliente.tipo_persona","fecha","lugar","apoderado.nombre","testigo1.nombre","testigo2.nombre"],"required":["cliente.nombre","apoderado.nombre"],"sensitive":[],"origins":{"cliente.nombre":"cliente","cliente.tipo_persona":"cliente","apoderado.nombre":"cliente","lugar":"cliente","fecha":"sistema"},"gates":["G1","G2"],"gaps":["Texto legal final pendiente de aprobación IDC"]},
-    "F-03":{"template":"F-03_carta_poder_uiie.docx","marks":["cliente.nombre","cliente.tipo_persona","fecha","lugar","apoderado.nombre","testigo1.nombre","testigo2.nombre","rpu","servicio.domicilio"],"required":["cliente.nombre","apoderado.nombre"],"sensitive":["rpu","servicio.domicilio"],"origins":{"cliente.nombre":"cliente","cliente.tipo_persona":"cliente","apoderado.nombre":"cliente","rpu":"cliente","servicio.domicilio":"cliente","lugar":"cliente","fecha":"sistema"},"gates":["G1"],"gaps":["Texto UIIE pendiente de captura y aprobación IDC"]},
-    "F-04":{"template":"F-04_ficha.docx","marks":["cliente.nombre","fecha","gestor.nombre","responsable.nombre","responsable.correo","responsable.telefono","enlace_cfe","enlace_cfe_correo","rpu","tarifa","tension","tecnologia","capacidad_kw","servicio.domicilio"],"required":["cliente.nombre","rpu","tension"],"sensitive":["rpu","servicio.domicilio","enlace_cfe_correo"],"origins":{"cliente.nombre":"cliente","rpu":"cliente","tarifa":"cliente","tension":"cliente","responsable.nombre":"cliente","responsable.correo":"cliente","responsable.telefono":"cliente","enlace_cfe":"IDC","enlace_cfe_correo":"IDC"},"gates":["G1"],"gaps":["U12/U13/U17 requieren confirmación de IDC"]},
-    "F-05":{"template":"F-05_memoria_calculo.docx","marks":["cliente.nombre","capacidad_kw","folio","ingeniero.nombre","tramite"],"required":[],"sensitive":[],"origins":{"cliente.nombre":"cliente","capacidad_kw":"cliente","folio":"sistema","ingeniero.nombre":"cliente","tramite":"sistema"},"gates":["G1","G3"],"gaps":["Captura técnica de memoria queda pendiente fuera de 6c"]},
-    "F-06":{"template":"F-06_caratula.docx","marks":["folio","fecha","cliente.nombre","tramite","lista","capacidad_kw","gestor.nombre","id","estado","nombre","paginas","rpu","sha256_corto"],"required":["folio","cliente.nombre","tramite"],"sensitive":["rpu"],"origins":{"folio":"sistema","fecha":"sistema","cliente.nombre":"cliente","tramite":"sistema","lista":"IDC"},"gates":["G1","G2"],"gaps":[]}
+    "F-02": {
+      "template": "F-02_carta_poder.docx",
+      "marks": [
+        "cliente.nombre",
+        "cliente.tipo_persona",
+        "firma.fecha_corta",
+        "firma.lugar",
+        "apoderado.nombre",
+        "testigo1.nombre",
+        "testigo2.nombre",
+        "expediente.folio"
+      ],
+      "required": [
+        "cliente.nombre",
+        "apoderado.nombre"
+      ],
+      "sensitive": [],
+      "origins": {
+        "cliente.nombre": "cliente",
+        "cliente.tipo_persona": "cliente",
+        "apoderado.nombre": "cliente",
+        "firma.lugar": "cliente",
+        "firma.fecha_corta": "sistema"
+      },
+      "gates": [
+        "G1",
+        "G2"
+      ],
+      "gaps": [
+        "Texto legal final pendiente de aprobación IDC"
+      ]
+    },
+    "F-03": {
+      "template": "F-03_carta_poder_uiie.docx",
+      "marks": [
+        "cliente.nombre",
+        "cliente.tipo_persona",
+        "firma.fecha_corta",
+        "firma.lugar",
+        "apoderado.nombre",
+        "testigo1.nombre",
+        "testigo2.nombre",
+        "servicio.rpu",
+        "servicio.domicilio"
+      ],
+      "required": [
+        "cliente.nombre",
+        "apoderado.nombre"
+      ],
+      "sensitive": [
+        "servicio.rpu",
+        "servicio.domicilio"
+      ],
+      "origins": {
+        "cliente.nombre": "cliente",
+        "cliente.tipo_persona": "cliente",
+        "apoderado.nombre": "cliente",
+        "servicio.rpu": "cliente",
+        "servicio.domicilio": "cliente",
+        "firma.lugar": "cliente",
+        "firma.fecha_corta": "sistema"
+      },
+      "gates": [
+        "G1"
+      ],
+      "gaps": [
+        "Texto UIIE pendiente de captura y aprobación IDC"
+      ]
+    },
+    "F-04": {
+      "template": "F-04_ficha.docx",
+      "marks": [
+        "cliente.nombre",
+        "firma.fecha_corta",
+        "gestor.nombre",
+        "responsable_cliente.nombre",
+        "responsable_cliente.correo",
+        "responsable_cliente.telefono",
+        "responsable_cfe.nombre",
+        "responsable_cfe.correo",
+        "servicio.rpu",
+        "servicio.tarifa",
+        "central.tension",
+        "central.tecnologia",
+        "central.capacidad_kw",
+        "servicio.domicilio"
+      ],
+      "required": [
+        "cliente.nombre",
+        "servicio.rpu",
+        "central.tension"
+      ],
+      "sensitive": [
+        "servicio.rpu",
+        "servicio.domicilio",
+        "responsable_cfe.correo"
+      ],
+      "origins": {
+        "cliente.nombre": "cliente",
+        "servicio.rpu": "cliente",
+        "servicio.tarifa": "cliente",
+        "central.tension": "cliente",
+        "responsable_cliente.nombre": "cliente",
+        "responsable_cliente.correo": "cliente",
+        "responsable_cliente.telefono": "cliente",
+        "responsable_cfe.nombre": "IDC",
+        "responsable_cfe.correo": "IDC"
+      },
+      "gates": [
+        "G1"
+      ],
+      "gaps": [
+        "U12/U13/U17 requieren confirmación de IDC"
+      ]
+    },
+    "F-05": {
+      "template": "F-05_memoria_calculo.docx",
+      "marks": [
+        "cliente.nombre",
+        "central.capacidad_kw",
+        "expediente.folio",
+        "ingeniero.nombre",
+        "expediente.tramite"
+      ],
+      "required": [],
+      "sensitive": [],
+      "origins": {
+        "cliente.nombre": "cliente",
+        "central.capacidad_kw": "cliente",
+        "expediente.folio": "sistema",
+        "ingeniero.nombre": "cliente",
+        "expediente.tramite": "sistema"
+      },
+      "gates": [
+        "G1",
+        "G3"
+      ],
+      "gaps": [
+        "Captura técnica de memoria queda pendiente fuera de 6c"
+      ]
+    },
+    "F-06": {
+      "template": "F-06_caratula.docx",
+      "marks": [
+        "expediente.folio",
+        "expediente.fecha",
+        "cliente.nombre",
+        "expediente.tramite",
+        "central.capacidad_kw",
+        "gestor.nombre",
+        "documentos"
+      ],
+      "required": [
+        "expediente.folio",
+        "cliente.nombre",
+        "expediente.tramite"
+      ],
+      "sensitive": [],
+      "origins": {
+        "expediente.folio": "sistema",
+        "expediente.fecha": "sistema",
+        "cliente.nombre": "cliente",
+        "expediente.tramite": "sistema",
+        "documentos": "IDC"
+      },
+      "gates": [
+        "G1",
+        "G2"
+      ],
+      "gaps": []
+    }
   },
-  "grupos": ["expediente","documento","plantilla","solicitante","representante","otorgante","apoderado","testigo1","testigo2","contacto","servicio","central","cfe","gestor","coordinador","firma","revision","responsable_cliente","responsable_cfe","memoria","documentos"]
+  "grupos": [
+    "expediente",
+    "documento",
+    "plantilla",
+    "representante",
+    "otorgante",
+    "apoderado",
+    "testigo1",
+    "testigo2",
+    "contacto",
+    "servicio",
+    "central",
+    "cfe",
+    "gestor",
+    "coordinador",
+    "firma",
+    "revision",
+    "responsable_cliente",
+    "responsable_cfe",
+    "memoria",
+    "documentos",
+    "cliente",
+    "ingeniero"
+  ]
 }

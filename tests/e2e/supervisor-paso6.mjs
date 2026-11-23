@@ -59,7 +59,7 @@ if (expediente) {
   const invalidFormat = await gestor.request("POST", `/api/expedientes/${expediente.id}/formats`, { formatCode: "F-99" });
   ok("formato desconocido devuelve 400", invalidFormat.status === 400);
   const zip = new PizZip(await fs.readFile(`${process.cwd()}/templates/F-02_carta_poder.docx`));
-  const xml = zip.file("word/document.xml").asText().replace("{{fecha}}", "{{marca.inexistente}}");
+  const xml = zip.file("word/document.xml").asText().replace("{{firma.fecha_corta}}", "{{marca.inexistente}}");
   zip.file("word/document.xml", xml);
   const form = new FormData();
   form.set("code", "F-02");

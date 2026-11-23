@@ -10,9 +10,9 @@ con un máximo de dos niveles: `grupo.campo`. Las listas tienen nombre plural.
 | Marca | Tipo | Ejemplo ficticio | Origen/captura | Gate | Sensible | Formatos |
 |---|---|---|---|---|---|---|
 | `expediente.folio` | texto | IDC-2026-0001 | sistema | G1 | no | F-06 |
-| `solicitante.nombre_razon_social` | texto | Empresa Solar Ficticia S.A. de C.V. | cliente | G1 | no | F-02,F-03,F-04 |
+| `cliente.nombre` | texto | Empresa Solar Ficticia S.A. de C.V. | cliente (desde `data_json.solicitante`) | G1 | no | F-02,F-03,F-04,F-05,F-06 |
 | `cliente.tipo_persona` | texto | PERSONA FISICA | cliente | G1 | no | F-02,F-03 |
-| `solicitante.rfc` | texto | XAXX010101000 | cliente | G1 | sí | F-02 |
+| `cliente.rfc` | texto | XAXX010101000 | cliente (desde `data_json.solicitante`) | G1 | sí | — |
 | `otorgante.nombre` | texto | Empresa Solar Ficticia S.A. de C.V. | cliente | G1 | no | F-02,F-03 |
 | `apoderado.nombre` | texto | Apoderado Ficticio | cliente | G1 | no | F-02,F-03 |
 | `testigo1.nombre` / `testigo2.nombre` | texto | Testigo Ficticio Uno/Dos | cliente | G1 | no | F-02,F-03 |
@@ -24,7 +24,7 @@ con un máximo de dos niveles: `grupo.campo`. Las listas tienen nombre plural.
 | `central.capacidad_kw` | decimal_2 | 187.50 | cliente | G1 | no | F-05 |
 | `responsable_cliente.nombre` | texto | UVIE Ficticio | cliente/IDC | G1 | no | F-04 |
 | `responsable_cfe.nombre` | texto | Enlace CFE Ficticio | CFE/IDC | G1 | no | F-04 |
-| `enlace_cfe_correo` | correo | enlace.cfe@example.invalid | CFE/IDC | G1 | sí | F-04 |
+| `responsable_cfe.correo` | correo | enlace.cfe@example.invalid | CFE/IDC | G1 | sí | F-04 |
 | `ingeniero.nombre` | texto | Ingeniero Ficticio | cliente/IDC | G1 | no | F-05 |
 | `memoria.inversor` | texto | Inversor Ficticio 250 kW | cliente | G1 | no | F-05 |
 | `memoria.strings` | lista | String A | cliente | G1 | no | F-05 |
@@ -57,7 +57,7 @@ La única sintaxis de ciclos es:
 
 ```text
 {{#documentos}}
-{{documento.codigo}} {{documento.estado}} {{documento.version}} {{documento.sha256_corto}}
+{{documento.codigo}} {{documento.estado}} {{documento.nombre}} {{documento.paginas}} {{documento.rpu}} {{documento.sha256_corto}}
 {{/documentos}}
 ```
 
@@ -67,11 +67,13 @@ como advertencias sin inventar datos.
 
 ## Huecos y conflictos conocidos
 
-- La aplicación histórica usa `solicitante.nombre_razon_social`,
-  `servicio_actual.rpu` y `central.capacidad_bruta_kw`; el catálogo los
-  expone como `solicitante.nombre_razon_social`, `servicio.rpu` y
-  `central.capacidad_kw`. La adaptación se hace en el mapper de generación;
-  no se renombra `data_json` en esta fase.
+- La aplicación histórica usa `data_json.solicitante`, `servicio_actual` y
+  `central`; las plantillas usan únicamente `cliente.*`, `servicio.*` y
+  `central.*`. El mapper traduce esos datos sin renombrar ni migrar
+  destructivamente `data_json`.
+- El correo del Enlace Empresarial se normaliza como
+  `responsable_cfe.correo`; `enlace_cfe` se presenta como
+  `responsable_cfe.nombre`.
 - Otorgante, apoderado, testigos, identificaciones, firma, U12/U13/U17 y
   responsables CFE aún requieren captura explícita.
 - `cfe.area_destinataria` y el texto legal final requieren confirmación IDC.
@@ -106,20 +108,21 @@ como advertencias sin inventar datos.
 Convención: marcas en minúsculas, sin acentos, `snake_case`, máximo dos niveles;
 listas en plural; delimitadores `{{` y `}}`; faltante `______`.
 
-- **F-02:** `cliente.nombre`, `cliente.tipo_persona`, `fecha`, `lugar`,
-  `apoderado.nombre`, `testigo1.nombre`, `testigo2.nombre`.
-- **F-03:** `cliente.nombre`, `cliente.tipo_persona`, `fecha`, `lugar`,
-  `apoderado.nombre`, `testigo1.nombre`, `testigo2.nombre`, `rpu`,
+- **F-02:** `cliente.nombre`, `cliente.tipo_persona`, `firma.fecha_corta`,
+  `firma.lugar`, `apoderado.nombre`, `testigo1.nombre`, `testigo2.nombre`.
+- **F-03:** las marcas de F-02 más `servicio.rpu` y
   `servicio.domicilio`.
-- **F-04:** `cliente.nombre`, `fecha`, `gestor.nombre`, `responsable.nombre`,
-  `responsable.correo`, `responsable.telefono`, `enlace_cfe`,
-  `enlace_cfe_correo`, `rpu`, `tarifa`, `tension`, `tecnologia`,
-  `capacidad_kw`, `servicio.domicilio`.
-- **F-05:** `cliente.nombre`, `capacidad_kw`, `folio`, `ingeniero.nombre`,
-  `tramite`.
-- **F-06:** `folio`, `fecha`, `cliente.nombre`, `tramite`, `capacidad_kw`,
-  `gestor.nombre`, `id`, `estado`, `nombre`, `paginas`, `rpu`,
-  `sha256_corto` y el ciclo `{{#lista}}...{{/lista}}`.
+- **F-04:** `cliente.nombre`, `firma.fecha_corta`, `gestor.nombre`,
+  `responsable_cliente.nombre`, `responsable_cliente.correo`,
+  `responsable_cliente.telefono`, `responsable_cfe.nombre`,
+  `responsable_cfe.correo`, `servicio.rpu`, `servicio.tarifa`,
+  `servicio.domicilio`, `central.tension`, `central.tecnologia`,
+  `central.capacidad_kw`.
+- **F-05:** `cliente.nombre`, `central.capacidad_kw`,
+  `expediente.folio`, `ingeniero.nombre`, `expediente.tramite`.
+- **F-06:** `expediente.folio`, `expediente.fecha`, `cliente.nombre`,
+  `expediente.tramite`, `central.capacidad_kw`, `gestor.nombre` y el ciclo
+  `{{#documentos}}...{{/documentos}}` con marcas `documento.*`.
 
 Reglas Word: marca de corrido, no cambiar formato a media marca, guardar como
 `.docx`, sin macros. [OBSERVADO EN ARCHIVO] se refiere a rutas existentes;

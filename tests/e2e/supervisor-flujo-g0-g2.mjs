@@ -89,9 +89,11 @@ try {
   ok("F-01: sin volcado 'seccion.campo:'", !added.includes(hexOf("solicitante.")) && !added.includes("solicitante."));
   await dl("F-04");
   const f02Docx = new PizZip(await dl("F-02")).file("word/document.xml").asText();
-  ok("F-02 DOCX no conserva marcas y tiene carta poder", !f02Docx.includes("{{") && /CARTA PODER|Carta poder/.test(f02Docx));
+  const r06Review = await req("R06");
+  const r06Sha = r06Review?.versions?.find((version) => !version.change_reason)?.sha256?.slice(0, 12);
+  ok("F-02 DOCX conserva contenido de carta y datos ficticios", !f02Docx.includes("{{") && /CARTA PODER|Carta poder/.test(f02Docx) && /testigo/i.test(f02Docx) && f02Docx.includes("Empresa Solar Ficticia") && f02Docx.includes(exp.folio));
   const f06Docx = new PizZip(await dl("F-06")).file("word/document.xml").asText();
-  ok("F-06 DOCX no conserva marcas y tiene loop resuelto", !f06Docx.includes("{{") && /CARÁTULA|Carátula/.test(f06Docx));
+  ok("F-06 DOCX conserva folio y SHA de R06", !f06Docx.includes("{{") && /CARÁTULA|Carátula/.test(f06Docx) && f06Docx.includes(exp.folio) && !!r06Sha && f06Docx.includes(r06Sha));
 
   console.log("== firma presencial y escaneos");
   for (const f of ["F-01", "F-02"]) { const r = await g1.post(`${E}/formats`, { action: "print", formatCode: f, versionId: gen[f]?.versionId }); ok(`imprimir ${f} → pendiente_firma`, [200, 201].includes(r.status), r.text); }

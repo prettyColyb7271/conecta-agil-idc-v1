@@ -36,7 +36,7 @@ try {
   console.log("== alta");
   ok("cliente no puede crear gestor → 403", (await cli.post("/api/admin/users", { action: "create_gestor", email: "x1@example.invalid", displayName: "X" })).status === 403);
   ok("Gestor IDC no puede crear gestor → 403", (await idc.post("/api/admin/users", { action: "create_gestor", email: "x2@example.invalid", displayName: "X" })).status === 403);
-  const c = await adm.post("/api/admin/users", { action: "create_gestor", email, displayName: "Nuevo Gestor", password: "ElegidaPorAdmin-123" });
+  const c = await adm.post("/api/admin/users", { action: "create_gestor", email, displayName: "Nuevo Gestor" });
   const setupUrl = c.json?.setupUrl;
   const setupToken = setupUrl && new URL(setupUrl).searchParams.get("token");
   ok("alta → 201 con enlace de un solo uso (sin contraseña)", c.status === 201 && typeof setupUrl === "string" && typeof setupToken === "string" && !/temporaryPassword|password/i.test(JSON.stringify(c.json)), JSON.stringify(c.json));
@@ -47,9 +47,12 @@ try {
   ok("GET usuarios no expone data_json/expedientes", !/data_json|IDC-DEMO-0001|XAXX/.test(list.text));
 
   console.log("== definición por enlace");
+  const replacement = await adm.post("/api/admin/users", { action: "reset_password", userId: uid });
+  const replacementToken = replacement.json?.setupUrl && new URL(replacement.json.setupUrl).searchParams.get("token");
+  ok("generar enlace nuevo invalida el anterior", replacement.status === 200 && replacementToken && (await new S().post("/api/auth/setup-password", { token: setupToken, newPassword: "NuevaSegura-2026!" })).status === 400);
   const g = new S();
-  ok("el enlace permite definir una contraseña", (await g.post("/api/auth/setup-password", { token: setupToken, newPassword: "NuevaSegura-2026!" })).status === 200);
-  ok("el enlace ya no puede reutilizarse", (await g.post("/api/auth/setup-password", { token: setupToken, newPassword: "OtraSegura-2026!" })).status === 400);
+  ok("el enlace permite definir una contraseña", (await g.post("/api/auth/setup-password", { token: replacementToken, newPassword: "NuevaSegura-2026!" })).status === 200);
+  ok("el enlace ya no puede reutilizarse", (await g.post("/api/auth/setup-password", { token: replacementToken, newPassword: "OtraSegura-2026!" })).status === 400);
   ok("login con contraseña definida → 200", (await g.login(email, "NuevaSegura-2026!")).status === 200);
   ok("página de definición disponible sin sesión", (await g.get(`/definir-contrasena?token=${setupToken}`)).status === 200);
   const cp = (b) => g.post("/api/auth/change-password", b);
@@ -70,15 +73,21 @@ try {
   ok("reset → 200 con nuevo enlace", rs.status === 200 && temp2 && temp2 !== setupToken, JSON.stringify(rs.json));
   ok("reset revoca sesión activa", [401, 403].includes((await g.get("/api/expedientes")).status));
   ok("contraseña cambiada ya no sirve tras reset", (await new S().login(email, "OtraSegura-2026!")).status !== 200);
+  const dbExpired = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  dbExpired.prepare("UPDATE password_setup_tokens SET expires_at = ? WHERE token_hash = (SELECT token_hash FROM password_setup_tokens WHERE used_at IS NULL ORDER BY created_at DESC LIMIT 1)").run(new Date(Date.now() - 60_000).toISOString());
+  dbExpired.close();
+  ok("enlace vencido falla", (await new S().post("/api/auth/setup-password", { token: temp2, newPassword: "TerceraSegura-2026!" })).status === 400);
+  const rs2 = await adm.post("/api/admin/users", { action: "reset_password", userId: uid });
+  const temp3 = rs2.json?.setupUrl && new URL(rs2.json.setupUrl).searchParams.get("token");
   const g3 = new S();
-  ok("tras reset: enlace define nueva contraseña", (await g3.post("/api/auth/setup-password", { token: temp2, newPassword: "TerceraSegura-2026!" })).status === 200);
+  ok("tras reset: enlace define nueva contraseña", (await g3.post("/api/auth/setup-password", { token: temp3, newPassword: "TerceraSegura-2026!" })).status === 200);
   ok("cliente no puede resetear → 403", (await cli.post("/api/admin/users", { action: "reset_password", userId: uid })).status === 403);
 
   console.log("== rastros");
   const db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"), { readOnly: true });
   const dump = JSON.stringify([db.prepare("select * from audit_events").all(), db.prepare("select * from users").all(), db.prepare("select * from notifications").all()]);
   ok("enlaces/contraseñas no están en BD en claro (audit, users, notifications)", !["NuevaSegura-2026!", "OtraSegura-2026!", "TerceraSegura-2026!"].some((s) => dump.includes(s)));
-  ok("enlaces no aparecen en logs del servidor", ![setupToken, temp2].some((s) => serverLog.includes(s)));
+  ok("enlaces no aparecen en logs del servidor", ![setupToken, replacementToken, temp2, temp3].some((s) => serverLog.includes(s)));
   const ev = db.prepare("select event_type from audit_events").all().map((r) => r.event_type);
   ok("auditoría: alta, definición y reset registrados", ["definicion_contrasena_enlace", "reset_contrasena"].every((e) => ev.includes(e)) && ev.some((e) => /alta_gestor/.test(e)), [...new Set(ev)].join(","));
   db.close();
