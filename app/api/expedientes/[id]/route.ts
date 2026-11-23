@@ -1,4 +1,4 @@
-import { assertSameOrigin, getCurrentUser } from "@/lib/auth";
+import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
 import { assignResponsable, getExpediente, updateExpedienteData, ValidationError, type ExpedienteData } from "@/lib/data/expedientes";
 import { readJson, RequestInputError } from "@/lib/http";
 
@@ -6,6 +6,8 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
   const user = await getCurrentUser();
+  const passwordResponse = passwordChangeRequired(user);
+  if (passwordResponse) return passwordResponse;
   if (!user || user.role === "admin_seguridad") return Response.json({ error: "No autorizado." }, { status: 403 });
   const { id } = await params;
   const expediente = getExpediente(user, id);
@@ -16,6 +18,8 @@ export async function PATCH(request: Request, { params }: Params) {
   try {
     assertSameOrigin(request);
     const user = await getCurrentUser();
+    const passwordResponse = passwordChangeRequired(user);
+    if (passwordResponse) return passwordResponse;
     if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
     const { id } = await params;
     const body = await readJson<{ action?: string; responsableId?: string; data?: ExpedienteData }>(request);

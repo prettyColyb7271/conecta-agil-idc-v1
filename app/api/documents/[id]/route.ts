@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, passwordChangeRequired } from "@/lib/auth";
 import { downloadDocument } from "@/lib/data/documents";
 
 type Params = { params: Promise<{ id: string }> };
@@ -6,6 +6,8 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(request: Request, { params }: Params) {
   try {
     const user = await getCurrentUser();
+    const passwordResponse = passwordChangeRequired(user);
+    if (passwordResponse) return passwordResponse;
     if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
     const { id } = await params;
     const versionId = new URL(request.url).searchParams.get("version");

@@ -118,6 +118,14 @@ if (g2) {
   ok("Responsable IDC anterior conserva acceso por alcance global", (await responsable1.get(`/api/expedientes/${eA?.id}`)).status === 200);
   const n1 = (await responsable1.get("/api/notifications")).json?.notifications ?? [];
   ok("Responsable IDC anterior recibe notificación", n1.some((n) => n.expediente_id === eA?.id && n.type === "expediente_reasignado"));
+  const pendingUpload = await A.s.upload(`/api/expedientes/${eA?.id}/documents`, "R06", Buffer.from("%PDF-1.7\npendiente"));
+  ok("requisito cargado disponible para pendientes", pendingUpload.status === 201);
+  const mine = (await responsable2.get("/api/gestor/pendientes?scope=mine")).json?.pendientes ?? [];
+  const notMine = (await responsable1.get("/api/gestor/pendientes?scope=mine")).json?.pendientes ?? [];
+  ok("Mis pendientes con filtro míos respeta responsable", mine.some((p) => p.expedienteId === eA?.id) && !notMine.some((p) => p.expedienteId === eA?.id));
+  const blockedResponsible = await admin.post("/api/admin/users", { userId: g2.id, action: "block" });
+  const n2 = (await responsable1.get("/api/notifications")).json?.notifications ?? [];
+  ok("bloquear responsable informa conteo y notifica a otro Gestor IDC", blockedResponsible.json?.unassignedCount >= 1 && n2.some((n) => n.type === "responsable_bloqueado"));
 }
 
 console.log("== P4 captura y validación");
@@ -184,13 +192,34 @@ if (dbPath) {
 
 console.log("== P3/P4 varios");
 const managerEmail = `gestor.admin.${ts}@example.invalid`;
-const managerPassword = "Gestor-Admin-2026!";
-const createdManager = await admin.post("/api/admin/users", { action: "create_gestor", displayName: "Gestor creado por admin", email: managerEmail, password: managerPassword });
-ok("admin crea Gestor IDC sin límite de cupo", createdManager.status === 201 && createdManager.json?.user?.role === "coordinador_idc");
+const createdManager = await admin.post("/api/admin/users", { action: "create_gestor", displayName: "Gestor creado por admin", email: managerEmail });
+const managerPassword = createdManager.json?.temporaryPassword;
+ok("admin crea Gestor IDC sin límite de cupo", createdManager.status === 201 && typeof managerPassword === "string" && managerPassword.length >= 16 && !createdManager.text.includes("password_hash"));
 const manager = new S();
 ok("Gestor IDC creado puede iniciar sesión", (await manager.login(managerEmail, managerPassword)).status === 200);
 const managed = (await admin.get("/api/admin/users")).json?.users?.find((user) => user.email === managerEmail);
-ok("Gestor IDC creado aparece en administración", managed?.role === "coordinador_idc" && managed?.status === "activo");
+const audits = (await admin.get("/api/admin/users")).text;
+let auditText = "";
+const auditDbPath = process.env.LOCAL_DATA_DIR ? `${process.env.LOCAL_DATA_DIR}\\conecta-agil.sqlite` : null;
+if (auditDbPath) {
+  const auditDb = new DatabaseSync(auditDbPath);
+  auditText = auditDb.prepare("SELECT metadata_json FROM audit_events").all().map((row) => String(row.metadata_json)).join(" ");
+  auditDb.close();
+}
+ok("Gestor IDC creado aparece en administración", managed?.role === "coordinador_idc" && managed?.status === "activo" && !audits.includes(managerPassword) && !auditText.includes(managerPassword));
+const forcedPage = await manager.get("/gestor"); const forcedApi = await manager.get("/api/expedientes");
+ok("Gestor temporal queda limitado a cambio de contraseña", [301, 302, 303, 307, 308].includes(forcedPage.status) && forcedApi.status === 403, `${forcedPage.status} ${forcedApi.status}`);
+ok("contraseña corta → 400", (await manager.post("/api/auth/change-password", { currentPassword: managerPassword, newPassword: "corta" })).status === 400);
+ok("contraseña igual → 400", (await manager.post("/api/auth/change-password", { currentPassword: managerPassword, newPassword: managerPassword })).status === 400);
+const permanentPassword = "Gestor-Permanente-2026!";
+ok("cambio válido → acceso restaurado", (await manager.post("/api/auth/change-password", { currentPassword: managerPassword, newPassword: permanentPassword })).status === 200 && (await manager.get("/api/expedientes")).status === 200);
+const reset = await admin.post("/api/admin/users", { userId: managed?.id, action: "reset_password" });
+const resetPassword = reset.json?.temporaryPassword;
+ok("reset genera temporal y revoca sesión", reset.status === 200 && typeof resetPassword === "string" && resetPassword.length >= 16 && [401, 403].includes((await manager.get("/api/expedientes")).status));
+ok("cliente no puede crear Gestor IDC", (await A.s.post("/api/admin/users", { action: "create_gestor", displayName: "No", email: `no.${ts}@example.invalid` })).status === 403);
+ok("Gestor IDC no puede restablecer contraseña", (await coord.post("/api/admin/users", { userId: managed?.id, action: "reset_password" })).status === 403);
+await manager.login(managerEmail, resetPassword);
+await manager.post("/api/auth/change-password", { currentPassword: resetPassword, newPassword: "Gestor-Restaurado-2026!" });
 await admin.post("/api/admin/users", { userId: managed?.id, action: "block" });
 ok("admin bloquea Gestor IDC y revoca su acceso", [401, 403].includes((await manager.get("/api/expedientes")).status));
 await admin.post("/api/admin/users", { userId: managed?.id, action: "unblock" });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Requirement = {
   requirement_code: string;
@@ -12,25 +12,30 @@ type Requirement = {
   validaciones: string;
   observations: Array<{ visibility: string; body: string }>;
 };
+type Pending = { kind: string; expedienteId: string; folio: string; requirementCode?: string; label: string };
 
 export default function LocalGestorReview() {
   const [expediente, setExpediente] = useState<{ id: string; folio: string } | null>(null);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [message, setMessage] = useState("");
+  const [scope, setScope] = useState<"mine" | "all">("all");
+  const [pending, setPending] = useState<Pending[]>([]);
 
-  async function load() {
+  const load = useCallback(async () => {
     const list = await fetch("/api/expedientes").then((response) => response.json()) as { expedientes?: Array<{ id: string; folio: string }> };
+    const pendingData = await fetch(`/api/gestor/pendientes?scope=${scope}`).then((response) => response.json()) as { pendientes?: Pending[] };
+    setPending(pendingData.pendientes ?? []);
     const first = list.expedientes?.[0] ?? null;
     setExpediente(first);
     if (first) {
       const review = await fetch(`/api/expedientes/${first.id}/requirements/R01`).then((response) => response.json()) as { requirements?: Requirement[] };
       setRequirements(review.requirements ?? []);
     }
-  }
+  }, [scope]);
   useEffect(() => {
     const timer = window.setTimeout(() => { void load(); }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [load]);
 
   async function review(code: string, action: "validate" | "observe" | "not_applicable") {
     const reason = action === "validate" ? undefined : window.prompt("Motivo obligatorio:")?.trim();
@@ -48,6 +53,21 @@ export default function LocalGestorReview() {
   if (!expediente) return <p className="text-sm">No hay expedientes para revisar.</p>;
   return <section className="space-y-3 rounded-sm bg-[#b6cde3] p-4 text-[#0d1f33]">
     <h2 className="text-xl font-bold">Revisión de requisitos — Gestor IDC</h2>
+    <div className="rounded bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-bold">Mis pendientes</h3>
+        <label className="text-sm">Mostrar{" "}
+          <select value={scope} onChange={(event) => setScope(event.target.value as "mine" | "all")} className="border px-2 py-1">
+            <option value="mine">míos</option>
+            <option value="all">todos</option>
+          </select>
+        </label>
+      </div>
+      <ul className="mt-2 space-y-1 text-sm">
+        {pending.map((item, index) => <li key={`${item.kind}-${item.expedienteId}-${item.requirementCode ?? index}`}><b>{item.folio}</b> · {item.label}</li>)}
+        {!pending.length && <li>No hay pendientes en este filtro.</li>}
+      </ul>
+    </div>
     <p className="text-sm">Expediente: <b>{expediente.folio}</b></p>
     {message && <p role="status" className="text-sm font-bold">{message}</p>}
     <div className="space-y-2">{requirements.map((item) => <article key={item.requirement_code} className="rounded bg-white p-3 text-sm">

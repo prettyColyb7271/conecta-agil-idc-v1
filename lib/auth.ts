@@ -1,6 +1,7 @@
 import "server-only";
 
 import crypto from "node:crypto";
+import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -10,6 +11,7 @@ import type { Role } from "@/data/mock";
 
 export const SESSION_COOKIE = "conecta-session";
 export const ROLE_COOKIE = "conecta-role";
+export const MUST_CHANGE_COOKIE = "conecta-must-change";
 export const SESSION_HOURS = 8;
 
 export type AuthUser = {
@@ -19,6 +21,7 @@ export type AuthUser = {
   role: Role;
   status: "pendiente" | "activo" | "bloqueado";
   sessionId: string;
+  mustChangePassword: boolean;
 };
 
 const roleHome: Record<Role, string> = {
@@ -44,6 +47,16 @@ export function verifyPassword(password: string, encoded: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function generateTemporaryPassword(): string {
+  return crypto.randomBytes(24).toString("base64url");
+}
+
+export function passwordChangeRequired(user: AuthUser | null): NextResponse | null {
+  return user?.mustChangePassword
+    ? NextResponse.json({ error: "Debes cambiar tu contraseña" }, { status: 403 })
+    : null;
 }
 
 export function hashToken(token: string): string {
@@ -105,13 +118,14 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   if (getAppMode() !== "local") return null;
   const row = getDatabase().prepare(`
     SELECT s.id AS session_id, s.expires_at, s.revoked_at,
-           u.id, u.email, u.display_name, u.role, u.status
+           u.id, u.email, u.display_name, u.role, u.status, u.must_change_password
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.session_token_hash = ?
   `).get(hashToken(token)) as {
     session_id: string; expires_at: string; revoked_at: string | null;
     id: string; email: string; display_name: string; role: Role;
     status: AuthUser["status"];
+    must_change_password: number;
   } | undefined;
   if (!row || row.revoked_at || row.status !== "activo" || Date.parse(row.expires_at) <= Date.now()) return null;
   getDatabase().prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").run(new Date().toISOString(), row.session_id);
@@ -122,13 +136,15 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     role: row.role,
     status: row.status,
     sessionId: row.session_id,
+    mustChangePassword: row.must_change_password === 1,
   };
 }
 
-export async function requireRole(role: Role): Promise<AuthUser | null> {
+export async function requireRole(role: Role, options: { allowPasswordChange?: boolean } = {}): Promise<AuthUser | null> {
   const user = await getCurrentUser();
   if (getAppMode() === "demo") return null;
   if (!user) redirect("/api/auth/clear?next=/");
+  if (user.mustChangePassword && !options.allowPasswordChange) redirect("/cambiar-contrasena");
   if (user.role !== role) redirect(roleHome[user.role]);
   return user;
 }

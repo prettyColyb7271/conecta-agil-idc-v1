@@ -1,4 +1,4 @@
-import { assertSameOrigin, getCurrentUser } from "@/lib/auth";
+import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
 import { DocumentTooLargeError, DocumentValidationError, uploadDocument } from "@/lib/data/documents";
 
 type Params = { params: Promise<{ id: string }> };
@@ -8,6 +8,8 @@ export async function POST(request: Request, { params }: Params) {
   try {
     assertSameOrigin(request);
     const user = await getCurrentUser();
+    const passwordResponse = passwordChangeRequired(user);
+    if (passwordResponse) return passwordResponse;
     if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
     const { id } = await params;
     const contentLength = request.headers.get("content-length");

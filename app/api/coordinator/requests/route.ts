@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { assertSameOrigin, auditEvent, getCurrentUser, withTransaction } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, getCurrentUser, passwordChangeRequired, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
 
 export async function GET() {
   const user = await getCurrentUser();
+  const passwordResponse = passwordChangeRequired(user);
+  if (passwordResponse) return passwordResponse;
   if (!user || user.role !== "coordinador_idc") return NextResponse.json({ error: "No autorizado." }, { status: 403 });
   const rows = getDatabase().prepare(
     "SELECT id, email, display_name, requested_role, status, created_at, reason FROM account_requests WHERE status = 'pendiente' ORDER BY created_at",
@@ -17,6 +19,8 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await getCurrentUser();
+    const passwordResponse = passwordChangeRequired(user);
+    if (passwordResponse) return passwordResponse;
     if (!user || user.role !== "coordinador_idc") return NextResponse.json({ error: "No autorizado." }, { status: 403 });
     const body = await readJson<{ requestId?: string; action?: "approve" | "reject"; reason?: string }>(request);
     if (!body.requestId || !body.action || (body.action === "reject" && !body.reason?.trim())) {

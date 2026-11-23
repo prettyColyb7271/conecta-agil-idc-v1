@@ -127,6 +127,57 @@ export function listActiveResponsables(user: ScopeUser) {
   return getDatabase().prepare("SELECT id, display_name, email FROM users WHERE role = 'coordinador_idc' AND status = 'activo' ORDER BY email").all();
 }
 
+export type GestorPending = {
+  kind: "requisito" | "sin_responsable" | "observado" | "listo_g1";
+  expedienteId: string;
+  folio: string;
+  requirementCode?: string;
+  label: string;
+};
+
+export function listGestorPendientes(user: ScopeUser, scope: "mine" | "all" = "all"): GestorPending[] {
+  if (user.role !== "coordinador_idc") throw new Error("FORBIDDEN");
+  const database = getDatabase();
+  const assignmentFilter = scope === "mine" ? "AND e.gestor_id = ?" : "";
+  const params = scope === "mine" ? [user.id] : [];
+  const pending: GestorPending[] = [];
+  const loaded = database.prepare(`
+    SELECT e.id AS expediente_id, e.folio, er.requirement_code
+    FROM expedientes e JOIN expediente_requirements er ON er.expediente_id = e.id
+    WHERE er.status IN ('cargado', 'en_revision_idc') ${assignmentFilter}
+    ORDER BY e.folio, er.requirement_code
+  `).all(...params) as Array<{ expediente_id: string; folio: string; requirement_code: string }>;
+  for (const item of loaded) pending.push({ kind: "requisito", expedienteId: item.expediente_id, folio: item.folio, requirementCode: item.requirement_code, label: `${item.requirement_code} está cargado y requiere revisión IDC.` });
+  const unassigned = database.prepare(`
+    SELECT e.id AS expediente_id, e.folio
+    FROM expedientes e
+    WHERE NOT EXISTS (
+      SELECT 1 FROM expediente_assignments ea JOIN users u ON u.id = ea.user_id
+      WHERE ea.expediente_id = e.id AND ea.assignment_type = 'coordinador_idc' AND ea.ends_at IS NULL AND u.status = 'activo'
+    ) ${assignmentFilter}
+    ORDER BY e.folio
+  `).all(...params) as Array<{ expediente_id: string; folio: string }>;
+  for (const item of unassigned) pending.push({ kind: "sin_responsable", expedienteId: item.expediente_id, folio: item.folio, label: "Expediente sin responsable IDC activo." });
+  const observed = database.prepare(`
+    SELECT e.id AS expediente_id, e.folio, er.requirement_code
+    FROM expedientes e JOIN expediente_requirements er ON er.expediente_id = e.id
+    WHERE er.status = 'observado' ${assignmentFilter}
+    ORDER BY e.folio, er.requirement_code
+  `).all(...params) as Array<{ expediente_id: string; folio: string; requirement_code: string }>;
+  for (const item of observed) pending.push({ kind: "observado", expedienteId: item.expediente_id, folio: item.folio, requirementCode: item.requirement_code, label: `${item.requirement_code} está observado y espera al cliente.` });
+  const ready = database.prepare(`
+    SELECT e.id AS expediente_id, e.folio
+    FROM expedientes e
+    WHERE ${scope === "mine" ? "e.gestor_id = ? AND" : ""} (
+      SELECT COUNT(*) FROM expediente_requirements er WHERE er.expediente_id = e.id AND er.requirement_code BETWEEN 'R01' AND 'R11'
+        AND er.status IN ('validado_idc', 'no_aplica_justificado')
+    ) = 11
+    ORDER BY e.folio
+  `).all(...params) as Array<{ expediente_id: string; folio: string }>;
+  for (const item of ready) pending.push({ kind: "listo_g1", expedienteId: item.expediente_id, folio: item.folio, label: "Listo para cerrar G1." });
+  return pending;
+}
+
 const sectionFields: Record<string, readonly string[]> = {
   solicitante: ["tipo_persona", "nombre_razon_social", "rfc", "domicilio", "telefono", "correo"],
   servicio_actual: ["rpu", "nivel_tension_suministro", "tarifa"],

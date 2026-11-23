@@ -17,6 +17,9 @@ export function proxy(request: NextRequest) {
     response.cookies.delete("conecta-role");
     return response;
   }
+  if (isProtected && request.cookies.get("conecta-must-change")?.value === "1" && request.nextUrl.pathname !== "/cambiar-contrasena") {
+    return NextResponse.redirect(new URL("/cambiar-contrasena", request.url));
+  }
   const required = requiredRoles.find(([prefix]) => request.nextUrl.pathname === prefix || request.nextUrl.pathname.startsWith(`${prefix}/`));
   const role = request.cookies.get("conecta-role")?.value;
   if (required && role && role !== required[1]) {

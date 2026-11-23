@@ -1,9 +1,11 @@
-import { assertSameOrigin, getCurrentUser } from "@/lib/auth";
+import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
 
 export async function GET() {
   const user = await getCurrentUser();
+  const passwordResponse = passwordChangeRequired(user);
+  if (passwordResponse) return passwordResponse;
   if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
   const notifications = getDatabase().prepare(`
     SELECT id, expediente_id, type, priority, title, body, read_at, created_at
@@ -16,6 +18,8 @@ export async function PATCH(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await getCurrentUser();
+    const passwordResponse = passwordChangeRequired(user);
+    if (passwordResponse) return passwordResponse;
     if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
     const body = await readJson<{ id?: string }>(request);
     if (!body.id) return Response.json({ error: "Falta el id de la notificación." }, { status: 400 });

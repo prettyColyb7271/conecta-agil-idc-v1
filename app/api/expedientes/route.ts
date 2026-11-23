@@ -1,9 +1,11 @@
-import { assertSameOrigin, getCurrentUser } from "@/lib/auth";
+import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
 import { createExpediente, listActiveClients, listActiveResponsables, listExpedientes, ValidationError, ALLOWED_TRAMITES } from "@/lib/data/expedientes";
 import { readJson, RequestInputError } from "@/lib/http";
 
 export async function GET() {
   const user = await getCurrentUser();
+  const passwordResponse = passwordChangeRequired(user);
+  if (passwordResponse) return passwordResponse;
   if (!user || user.role === "admin_seguridad") return Response.json({ error: "No autorizado." }, { status: 403 });
   try {
     const expedientes = listExpedientes(user);
@@ -19,6 +21,8 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await getCurrentUser();
+    const passwordResponse = passwordChangeRequired(user);
+    if (passwordResponse) return passwordResponse;
     if (!user || user.role !== "coordinador_idc") return Response.json({ error: "No autorizado." }, { status: 403 });
     const body = await readJson<{ clienteId?: string; tramite?: string; nivelTension?: "BT" | "MT"; habilitado?: boolean; responsableId?: string }>(request);
     if (!body.clienteId || !body.tramite?.trim() || !body.nivelTension || typeof body.habilitado !== "boolean") {

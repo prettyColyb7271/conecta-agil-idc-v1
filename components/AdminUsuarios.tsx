@@ -15,10 +15,11 @@ const LABEL: Record<EstadoUsuario, string> = { pendiente: "Pendiente de revisió
 export default function AdminUsuarios() {
   const session = useSession();
   const [usuarios, setUsuarios] = useState(usuariosIniciales);
-  const [localUsers, setLocalUsers] = useState<{ id: string; email: string; display_name: string; role: Role; status: EstadoUsuario }[]>([]);
+  const [localUsers, setLocalUsers] = useState<{ id: string; email: string; display_name: string; role: Role; status: EstadoUsuario; last_login_at: string | null; responsible_count: number; must_change_password: number }[]>([]);
   const [requests, setRequests] = useState<{ id: string; email: string; display_name: string; requested_role: Role; created_at: string }[]>([]);
-  const [newManager, setNewManager] = useState({ displayName: "", email: "", password: "" });
+  const [newManager, setNewManager] = useState({ displayName: "", email: "" });
   const [managerMessage, setManagerMessage] = useState("");
+  const [temporaryPassword, setTemporaryPassword] = useState("");
   const localMode = process.env.NEXT_PUBLIC_MODO === "local";
   useEffect(() => {
     if (!localMode || !session) return;
@@ -65,12 +66,21 @@ export default function AdminUsuarios() {
       const data = await response.json() as { users: typeof localUsers };
       setLocalUsers(data.users);
     };
-    const change = async (userId: string, action: "block" | "unblock" | "revoke") => {
-      await fetch("/api/admin/users", {
+    const change = async (userId: string, action: "block" | "unblock" | "revoke" | "reset_password") => {
+      const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId, action }),
       });
+      const data = await response.json() as { error?: string; temporaryPassword?: string; unassignedCount?: number };
+      if (!response.ok) {
+        setManagerMessage(data.error ?? "No fue posible actualizar el usuario.");
+      } else if (action === "reset_password" && data.temporaryPassword) {
+        setTemporaryPassword(data.temporaryPassword);
+        setManagerMessage("Contraseña temporal generada. Cópiala ahora, no se volverá a mostrar.");
+      } else if (action === "block" && data.unassignedCount) {
+        setManagerMessage(`${data.unassignedCount} expediente(s) quedó(aron) sin responsable activo; se notificó a los demás Gestores IDC.`);
+      }
       await refreshUsers();
     };
     const createManager = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -79,15 +89,16 @@ export default function AdminUsuarios() {
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "create_gestor", ...newManager }),
+        body: JSON.stringify({ action: "create_gestor", displayName: newManager.displayName, email: newManager.email }),
       });
-      const data = await response.json() as { error?: string };
+      const data = await response.json() as { error?: string; temporaryPassword?: string };
       if (!response.ok) {
         setManagerMessage(data.error ?? "No fue posible crear el Gestor IDC.");
         return;
       }
-      setNewManager({ displayName: "", email: "", password: "" });
-      setManagerMessage("Gestor IDC creado y activo.");
+      setNewManager({ displayName: "", email: "" });
+      setTemporaryPassword(data.temporaryPassword ?? "");
+      setManagerMessage("Gestor IDC creado. Cópiala ahora, no se volverá a mostrar.");
       await refreshUsers();
     };
     return (
@@ -97,19 +108,20 @@ export default function AdminUsuarios() {
           <form onSubmit={createManager} className="grid gap-2 bg-white p-3 sm:grid-cols-4">
             <input required value={newManager.displayName} onChange={(event) => setNewManager({ ...newManager, displayName: event.target.value })} placeholder="Nombre completo" className="border px-2 py-1 text-sm" />
             <input required type="email" value={newManager.email} onChange={(event) => setNewManager({ ...newManager, email: event.target.value })} placeholder="Correo" className="border px-2 py-1 text-sm" />
-            <input required minLength={10} value={newManager.password} onChange={(event) => setNewManager({ ...newManager, password: event.target.value })} placeholder="Contraseña temporal" className="border px-2 py-1 text-sm" />
-            <button type="submit" className="border border-[#5885b1] px-2 py-1 text-sm font-bold">Crear Gestor IDC</button>
+            <button type="submit" className="border border-[#5885b1] px-2 py-1 text-sm font-bold sm:col-span-2">Crear Gestor IDC</button>
             {managerMessage && <p className="text-xs sm:col-span-4">{managerMessage}</p>}
+            {temporaryPassword && <p className="break-all bg-amber-100 p-2 text-sm font-bold sm:col-span-4">Contraseña temporal (cópiala ahora, no se volverá a mostrar): {temporaryPassword}</p>}
           </form>
           {localUsers.map((user) => (
             <div key={user.id} className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2 text-sm">
-              <span><b>{user.display_name}</b><span className="ml-2 text-xs text-slate-500">{user.email}</span></span>
+              <span><b>{user.display_name}</b><span className="ml-2 text-xs text-slate-500">{user.email}</span><span className="ml-2 text-xs">Último acceso: {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "nunca"} · Responsables: {user.responsible_count}</span></span>
               <span className="flex gap-2">
                 <span className="text-xs font-bold">{user.status}</span>
                 {user.status === "bloqueado"
                   ? <SmallButton onClick={() => void change(user.id, "unblock")}>Desbloquear</SmallButton>
                   : <SmallButton onClick={() => void change(user.id, "block")}>Bloquear</SmallButton>}
                 <SmallButton onClick={() => void change(user.id, "revoke")}>Revocar sesiones</SmallButton>
+                {user.role === "coordinador_idc" && <SmallButton onClick={() => void change(user.id, "reset_password")}>Restablecer contraseña</SmallButton>}
               </span>
             </div>
           ))}

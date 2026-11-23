@@ -1,4 +1,5 @@
 import GestorInicio from "@/components/GestorInicio";
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { getAppMode } from "@/lib/adapters/config";
 import LocalGestorReview from "@/components/LocalGestorReview";
@@ -7,6 +8,7 @@ import LocalGestorReview from "@/components/LocalGestorReview";
 export const instant = false;
 
 export default async function Page() {
-  await requireRole("coordinador_idc");
+  const user = await requireRole("coordinador_idc");
+  if (user?.mustChangePassword) redirect("/cambiar-contrasena");
   return getAppMode() === "local" ? <LocalGestorReview /> : <GestorInicio />;
 }

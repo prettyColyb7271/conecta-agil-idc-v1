@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
-import { assertSameOrigin, auditEvent, createSession, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, createSession, MUST_CHANGE_COOKIE, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import type { Role } from "@/data/mock";
 import { readJson, RequestInputError } from "@/lib/http";
@@ -33,8 +33,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 401 });
     }
 
-    const user = getDatabase().prepare("SELECT id, email, display_name, role, status, password_hash FROM users WHERE email = ?").get(email) as {
+    const user = getDatabase().prepare("SELECT id, email, display_name, role, status, password_hash, must_change_password FROM users WHERE email = ?").get(email) as {
       id: string; email: string; display_name: string; role: Role; status: "pendiente" | "activo" | "bloqueado"; password_hash: string;
+      must_change_password: number;
     } | undefined;
     const validPassword = user ? verifyPassword(password, user.password_hash) : false;
     if (!user || !validPassword) {
@@ -54,9 +55,10 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     getDatabase().prepare("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(now, now, user.id);
     auditEvent({ actorId: user.id, actorRole: user.role, eventType: "login_ok", entityType: "session", entityId: session.sessionId });
-    const response = NextResponse.json({ role: user.role, name: user.display_name });
+    const response = NextResponse.json({ role: user.role, name: user.display_name, mustChangePassword: user.must_change_password === 1 });
     response.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt, request));
     response.cookies.set(ROLE_COOKIE, user.role, sessionCookieOptions(session.expiresAt, request));
+    response.cookies.set(MUST_CHANGE_COOKIE, user.must_change_password === 1 ? "1" : "", { ...sessionCookieOptions(session.expiresAt, request), maxAge: user.must_change_password === 1 ? 60 * 60 * 8 : 0 });
     return response;
   } catch (error) {
     if (error instanceof Response) return error;
