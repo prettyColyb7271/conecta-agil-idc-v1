@@ -3,12 +3,13 @@ import crypto from "node:crypto";
 import { getAppMode } from "@/lib/adapters/config";
 import { assertSameOrigin, auditEvent, hashPassword } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
+import { readJson, RequestInputError } from "@/lib/http";
 
 export async function POST(request: Request) {
   if (getAppMode() !== "local") return NextResponse.json({ error: "El registro local no está activo en modo demo." }, { status: 404 });
   try {
     assertSameOrigin(request);
-    const body = await request.json() as { email?: string; password?: string; displayName?: string };
+    const body = await readJson<{ email?: string; password?: string; displayName?: string }>(request);
     const email = body.email?.trim().toLowerCase() ?? "";
     const displayName = body.displayName?.trim() ?? "";
     const password = body.password ?? "";
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Si los datos son válidos, tu solicitud quedó pendiente de revisión." }, { status: 201 });
   } catch (error) {
     if (error instanceof Response) return error;
+    if (error instanceof RequestInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: "No fue posible procesar el registro." }, { status: 500 });
   }
 }

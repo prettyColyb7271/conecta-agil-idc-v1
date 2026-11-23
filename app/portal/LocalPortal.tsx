@@ -14,8 +14,15 @@ type Props = {
 const input = "w-full rounded border border-[#1b3d66] bg-white px-3 py-2 text-sm text-[#0d1f33]";
 
 export default function LocalPortal({ expediente }: Props) {
-  const initial = expediente ? JSON.parse(expediente.data_json) as Record<string, Record<string, unknown>> : {};
-  const [data, setData] = useState(initial);
+  const raw = expediente ? JSON.parse(expediente.data_json) as Record<string, Record<string, unknown>> : {};
+  const initial = expediente ? {
+    solicitante: raw.solicitante,
+    servicio_actual: raw.servicio_actual,
+    central: raw.central ? Object.fromEntries(["tecnologia", "capacidad_bruta_kw", "capacidad_incrementar_kw", "generacion_mensual_kwh", "unidades", "utm", "modalidad", "fecha_estimada_operacion"].filter((key) => key in raw.central).map((key) => [key, raw.central[key]])) : undefined,
+    contacto: raw.contacto,
+    representacion: raw.representacion,
+  } : {};
+  const [data, setData] = useState(initial as Record<string, Record<string, unknown>>);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   if (!expediente) return <Panel title="Mi expediente"><p className="text-sm">Aún no tienes expediente asignado.</p></Panel>;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertSameOrigin, auditEvent, getCurrentUser, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
+import { readJson, RequestInputError } from "@/lib/http";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const actor = await getCurrentUser();
     if (!actor || actor.role !== "admin_seguridad") return NextResponse.json({ error: "No autorizado." }, { status: 403 });
-    const body = await request.json() as { userId?: string; action?: "block" | "unblock" | "revoke" };
+    const body = await readJson<{ userId?: string; action?: "block" | "unblock" | "revoke" }>(request);
     if (!body.userId || !body.action) return NextResponse.json({ error: "Faltan datos." }, { status: 400 });
     const database = getDatabase();
     const target = database.prepare("SELECT id, role, status FROM users WHERE id = ? AND role != 'admin_seguridad'").get(body.userId) as { id: string; role: string; status: string } | undefined;
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Response) return error;
+    if (error instanceof RequestInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: "No fue posible actualizar la cuenta." }, { status: 500 });
   }
 }

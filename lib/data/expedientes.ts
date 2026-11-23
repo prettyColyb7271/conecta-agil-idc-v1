@@ -5,6 +5,14 @@ import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 
 type ScopeUser = Pick<AuthUser, "id" | "role">;
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
+export const ALLOWED_TRAMITES = ["interconexion_fv_mt", "aprobacion_proyecto_mt", "contratacion_medidor"] as const;
 
 export type ExpedienteInput = {
   clienteId: string;
@@ -23,7 +31,7 @@ export type ExpedienteData = {
     telefono?: string;
     correo?: string;
   };
-  contacto?: Record<string, unknown>;
+  contacto?: { nombre?: string; puesto?: string; domicilio?: Record<string, string>; telefono?: string; correo?: string };
   servicio_actual?: { rpu?: string; nivel_tension_suministro?: string; tarifa?: string };
   central?: {
     tecnologia?: string;
@@ -35,8 +43,7 @@ export type ExpedienteData = {
     modalidad?: string;
     fecha_estimada_operacion?: string;
   };
-  representacion?: Record<string, unknown>;
-  [key: string]: unknown;
+  representacion?: { apoderado_id?: string; testigos?: string[] };
 };
 
 export type ExpedienteView = {
@@ -85,23 +92,23 @@ function rowsFor(user: ScopeUser, id?: string) {
     LEFT JOIN users gu ON gu.id = e.gestor_id
     WHERE ${condition}
     ORDER BY e.created_at DESC
-  `).all(...params) as ExpedienteView[];
+  `).all(...params).map((row) => ({ ...(row as ExpedienteView) })) as ExpedienteView[];
 }
 
 function enrich(row: ExpedienteView): ExpedienteView {
   const database = getDatabase();
-  row.gates = database.prepare("SELECT gate_code, status FROM gates WHERE expediente_id = ? ORDER BY gate_code").all(row.id) as ExpedienteView["gates"];
-  row.requirements = database.prepare(`
+  const gates = database.prepare("SELECT gate_code, status FROM gates WHERE expediente_id = ? ORDER BY gate_code").all(row.id) as ExpedienteView["gates"];
+  const requirements = database.prepare(`
     SELECT er.requirement_code, rc.name, er.status
     FROM expediente_requirements er JOIN requirement_catalog rc ON rc.code = er.requirement_code
     WHERE er.expediente_id = ? ORDER BY er.requirement_code
   `).all(row.id) as ExpedienteView["requirements"];
-  row.assignments = database.prepare(`
+  const assignments = database.prepare(`
     SELECT ea.user_id, u.display_name, ea.assignment_type, ea.starts_at, ea.ends_at
     FROM expediente_assignments ea JOIN users u ON u.id = ea.user_id
     WHERE ea.expediente_id = ? ORDER BY ea.starts_at
   `).all(row.id) as ExpedienteView["assignments"];
-  return row;
+  return { ...row, gates: gates.map((item) => ({ ...item })), requirements: requirements.map((item) => ({ ...item })), assignments: assignments.map((item) => ({ ...item })) };
 }
 
 export function listExpedientes(user: ScopeUser): ExpedienteView[] {
@@ -120,10 +127,48 @@ export function listActiveClients(user: ScopeUser) {
 
 export function listActiveGestors(user: ScopeUser) {
   if (user.role !== "coordinador_idc") throw new Error("FORBIDDEN");
-  return getDatabase().prepare("SELECT id, display_name, email FROM users WHERE role = 'gestor_tramites_cfe' AND status = 'activo' ORDER BY display_name").all();
+  return getDatabase().prepare("SELECT id, display_name, email FROM users WHERE role = 'gestor_tramites_cfe' AND status = 'activo' ORDER BY email").all();
 }
 
-function validateData(data: ExpedienteData): string[] {
+const sectionFields: Record<string, readonly string[]> = {
+  solicitante: ["tipo_persona", "nombre_razon_social", "rfc", "domicilio", "telefono", "correo"],
+  servicio_actual: ["rpu", "nivel_tension_suministro", "tarifa"],
+  central: ["tecnologia", "capacidad_bruta_kw", "capacidad_incrementar_kw", "generacion_mensual_kwh", "unidades", "utm", "modalidad", "fecha_estimada_operacion"],
+  contacto: ["nombre", "puesto", "domicilio", "telefono", "correo"],
+  representacion: ["apoderado_id", "testigos"],
+};
+const addressFields = ["calle", "num_exterior", "num_interior", "colonia", "cp", "municipio", "estado"] as const;
+
+function assertText(value: unknown, field: string): void {
+  if (typeof value !== "string") throw new ValidationError(`${field} debe ser texto.`);
+  if (value.length > 300) throw new ValidationError(`${field} no puede exceder 300 caracteres.`);
+}
+
+function validateData(data: ExpedienteData): void {
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new ValidationError("Los datos del expediente deben ser un objeto.");
+  const sections = data as Record<string, unknown>;
+  for (const section of Object.keys(sections)) {
+    if (!sectionFields[section]) throw new ValidationError(`Sección no permitida: ${section}.`);
+    const value = sections[section];
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError(`${section} debe ser un objeto.`);
+    for (const field of Object.keys(value)) {
+      if (!sectionFields[section].includes(field)) throw new ValidationError(`Campo no permitido: ${section}.${field}.`);
+      const fieldValue = (value as Record<string, unknown>)[field];
+      if (field === "domicilio") {
+        if (!fieldValue || typeof fieldValue !== "object" || Array.isArray(fieldValue)) throw new ValidationError(`${section}.domicilio debe ser un objeto.`);
+        for (const addressField of Object.keys(fieldValue)) {
+          if (!addressFields.includes(addressField as typeof addressFields[number])) throw new ValidationError(`Campo no permitido: ${section}.domicilio.${addressField}.`);
+          assertText((fieldValue as Record<string, unknown>)[addressField], `${section}.domicilio.${addressField}`);
+        }
+      } else if (field === "utm" || field === "testigos") {
+        if (!Array.isArray(fieldValue)) throw new ValidationError(`${section}.${field} debe ser una lista.`);
+        if (field === "testigos" && fieldValue.some((item) => typeof item !== "string")) throw new ValidationError("representacion.testigos debe contener texto.");
+        if (field === "testigos") fieldValue.forEach((item, index) => assertText(item, `representacion.testigos[${index}]`));
+      } else if (typeof fieldValue === "string") {
+        assertText(fieldValue, `${section}.${field}`);
+      }
+    }
+  }
   const errors: string[] = [];
   const person = data.solicitante;
   const service = data.servicio_actual;
@@ -133,7 +178,7 @@ function validateData(data: ExpedienteData): string[] {
   if (!service?.rpu?.trim()) errors.push("RPU es requerido.");
   else if (!/^\d+$/.test(service.rpu)) errors.push("RPU inválido: debe ser numérico.");
   if (central?.capacidad_bruta_kw === undefined || !Number.isFinite(central.capacidad_bruta_kw) || central.capacidad_bruta_kw <= 0) errors.push("La capacidad_bruta_kw debe ser mayor que cero.");
-  return errors;
+  if (errors.length) throw new ValidationError(errors.join(" "));
 }
 
 export function updateExpedienteData(user: ScopeUser, id: string, data: ExpedienteData) {
@@ -142,10 +187,9 @@ export function updateExpedienteData(user: ScopeUser, id: string, data: Expedien
   if (!current) throw new Error("NOT_FOUND");
   const gate = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(id) as { status: string } | undefined;
   if (gate?.status === "cerrado") throw new Error("LOCKED");
-  const errors = validateData(data);
-  if (errors.length) throw new Error(errors.join(" "));
+  validateData(data);
   const before = JSON.parse(current.data_json) as Record<string, unknown>;
-  const changedFields = Object.keys(data).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(data[key]));
+  const changedFields = Object.keys(data).filter((key) => JSON.stringify(before[key]) !== JSON.stringify((data as Record<string, unknown>)[key]));
   const now = new Date().toISOString();
   getDatabase().prepare("UPDATE expedientes SET data_json = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(data), now, id);
   auditEvent({ actorId: user.id, actorRole: user.role, eventType: "captura_datos", entityType: "expediente", entityId: id, expedienteId: id, metadata: { changed_fields: changedFields } });
@@ -154,6 +198,8 @@ export function updateExpedienteData(user: ScopeUser, id: string, data: Expedien
 
 export function createExpediente(user: ScopeUser, input: ExpedienteInput) {
   if (user.role !== "coordinador_idc") throw new Error("FORBIDDEN");
+  if (!ALLOWED_TRAMITES.includes(input.tramite as typeof ALLOWED_TRAMITES[number])) throw new ValidationError("Trámite no permitido.");
+  if (input.nivelTension !== "BT" && input.nivelTension !== "MT") throw new ValidationError("nivelTension debe ser BT o MT.");
   const database = getDatabase();
   const now = new Date().toISOString();
   return withTransaction(() => {

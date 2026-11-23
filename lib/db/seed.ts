@@ -37,6 +37,7 @@ const requirementCatalog = [
 const users = [
   ["cliente.demo@example.invalid", "Cliente Demo Ficticio", "cliente"],
   ["gestor.demo@example.invalid", "Gestor CFE Demo Ficticio", "gestor_tramites_cfe"],
+  ["gestor2.demo@example.invalid", "Gestor CFE 2 Demo Ficticio", "gestor_tramites_cfe"],
   ["coordinador.demo@example.invalid", "Coordinador Demo Ficticio", "coordinador_idc"],
   ["seguridad.demo@example.invalid", "Seguridad Demo Ficticio", "admin_seguridad"],
 ] as const;
@@ -61,7 +62,8 @@ export function seedDatabase(): { users: number; requirements: number; expedient
     const existing = findUser.get(email);
     const id = existing ? String(existing.id) : crypto.randomUUID();
     if (!existing) insertUser.run(id, email, displayName, role, hashPassword(TEST_PASSWORD), now, now);
-    userIds.set(role, id);
+    if (!userIds.has(role)) userIds.set(role, id);
+    if (email === "gestor2.demo@example.invalid") userIds.set("gestor_tramites_cfe_2", id);
   }
 
   const catalogInsert = database.prepare(

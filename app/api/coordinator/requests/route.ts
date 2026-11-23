@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { assertSameOrigin, auditEvent, getCurrentUser, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
+import { readJson, RequestInputError } from "@/lib/http";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const user = await getCurrentUser();
     if (!user || user.role !== "coordinador_idc") return NextResponse.json({ error: "No autorizado." }, { status: 403 });
-    const body = await request.json() as { requestId?: string; action?: "approve" | "reject"; reason?: string };
+    const body = await readJson<{ requestId?: string; action?: "approve" | "reject"; reason?: string }>(request);
     if (!body.requestId || !body.action || (body.action === "reject" && !body.reason?.trim())) {
       return NextResponse.json({ error: "La decisión y el motivo de rechazo son obligatorios." }, { status: 400 });
     }
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Response) return error;
+    if (error instanceof RequestInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: "No fue posible procesar la solicitud." }, { status: 500 });
   }
 }

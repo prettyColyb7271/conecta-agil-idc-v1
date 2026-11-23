@@ -3,6 +3,7 @@ import { getAppMode } from "@/lib/adapters/config";
 import { assertSameOrigin, auditEvent, createSession, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import type { Role } from "@/data/mock";
+import { readJson, RequestInputError } from "@/lib/http";
 
 const failures = new Map<string, number[]>();
 const WINDOW_MS = 15 * 60 * 1000;
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   if (getAppMode() !== "local") return NextResponse.json({ error: "El login local no está activo en modo demo." }, { status: 404 });
   try {
     assertSameOrigin(request);
-    const body = await request.json() as { email?: string; password?: string };
+    const body = await readJson<{ email?: string; password?: string }>(request);
     const email = body.email?.trim().toLowerCase() ?? "";
     const password = body.password ?? "";
     if (!email || !password || isRateLimited(email)) {
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     return response;
   } catch (error) {
     if (error instanceof Response) return error;
+    if (error instanceof RequestInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: "No fue posible iniciar sesión." }, { status: 500 });
   }
 }
