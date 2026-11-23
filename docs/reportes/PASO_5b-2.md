@@ -148,5 +148,5 @@ PASO 5b anterior:
 f53f5f4f1b49ea66d662b1ecdc9fb301849f8880
 
 PASO 5b-2:
-Pendiente de crear al redactar este reporte.
+8b00ad2ea6b71d03edfb043929b404bbc5c3fe7d
 ```
