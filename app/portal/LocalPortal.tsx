@@ -9,11 +9,12 @@ type Props = {
     gates: Array<{ gate_code: string; status: string }>;
     requirements: Array<{ requirement_code: string; name: string; status: string }>;
   } | null;
+  review: Array<{ requirement_code: string; name: string; status: string; integra: string; validaciones: string; observations: Array<{ visibility: string; body: string }> }>;
 };
 
 const input = "w-full rounded border border-[#1b3d66] bg-white px-3 py-2 text-sm text-[#0d1f33]";
 
-export default function LocalPortal({ expediente }: Props) {
+export default function LocalPortal({ expediente, review }: Props) {
   const raw = expediente ? JSON.parse(expediente.data_json) as Record<string, Record<string, unknown>> : {};
   const initial = expediente ? {
     solicitante: raw.solicitante,
@@ -25,6 +26,7 @@ export default function LocalPortal({ expediente }: Props) {
   const [data, setData] = useState(initial as Record<string, Record<string, unknown>>);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [uploadMessage, setUploadMessage] = useState("");
   if (!expediente) return <Panel title="Mi expediente"><p className="text-sm">Aún no tienes expediente asignado.</p></Panel>;
   const currentExpediente = expediente;
 
@@ -36,6 +38,17 @@ export default function LocalPortal({ expediente }: Props) {
     const body = await response.json();
     if (!response.ok) setError(body.error ?? "No fue posible guardar los datos.");
     else setMessage("Datos guardados correctamente.");
+  }
+  async function upload(code: string, file: File | undefined) {
+    if (!file) return;
+    setUploadMessage("");
+    const form = new FormData();
+    form.set("requirementCode", code);
+    form.set("file", file);
+    const response = await fetch(`/api/expedientes/${currentExpediente.id}/documents`, { method: "POST", body: form });
+    const body = await response.json() as { error?: string };
+    setUploadMessage(response.ok ? `${code} cargado correctamente.` : body.error ?? "No fue posible cargar el documento.");
+    if (response.ok) window.location.reload();
   }
   return <div className="space-y-3">
     <Panel title="Mi expediente">
@@ -59,7 +72,14 @@ export default function LocalPortal({ expediente }: Props) {
     </Panel>
     <Panel title="Gates y requisitos">
       <p className="text-sm font-bold">Gates: {expediente.gates.map((gate) => `${gate.gate_code}: ${gate.status}`).join(" · ")}</p>
-      <div className="mt-2 grid gap-1 text-xs md:grid-cols-2">{expediente.requirements.map((requirement) => <p key={requirement.requirement_code}><b>{requirement.requirement_code}</b> {requirement.name}: {requirement.status}</p>)}</div>
+      <p className="mt-2 text-sm font-bold">Avance: {review.filter((r) => ["validado_idc", "no_aplica_justificado"].includes(r.status)).length} de {review.length} validados o no aplica.</p>
+      {uploadMessage && <p role="status" className="mt-2 text-sm font-bold">{uploadMessage}</p>}
+      <div className="mt-2 space-y-2 text-xs">{review.map((requirement) => <div key={requirement.requirement_code} className="rounded border border-[#8da9c5] bg-white p-2">
+        <p><b>{requirement.requirement_code}</b> {requirement.name}: <strong>{requirement.status}</strong></p>
+        <p className="text-slate-600">Integra: {requirement.integra} · Validaciones: {requirement.validaciones}</p>
+        {requirement.observations.map((observation, index) => <p key={index} className="mt-1 text-red-700">Observación: {observation.body}</p>)}
+        <input aria-label={`Subir ${requirement.requirement_code}`} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={(event) => void upload(requirement.requirement_code, event.target.files?.[0])} />
+      </div>)}</div>
     </Panel>
   </div>;
 }

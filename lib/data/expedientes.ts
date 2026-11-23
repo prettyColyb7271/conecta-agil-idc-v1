@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 
-type ScopeUser = Pick<AuthUser, "id" | "role">;
+export type ScopeUser = Pick<AuthUser, "id" | "role">;
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message);

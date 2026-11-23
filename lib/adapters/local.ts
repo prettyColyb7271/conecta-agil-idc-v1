@@ -3,6 +3,7 @@ import "server-only";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import crypto from "node:crypto";
 import { getLocalDataDir } from "./config";
 import { getDatabase, getSchemaVersion } from "@/lib/db/sqlite";
 import { assertColumnName, assertTableName, quoteIdentifier, TABLE_PRIMARY_KEYS } from "@/lib/db/schema";
@@ -113,18 +114,32 @@ class LocalStorageAdapter implements StorageAdapter {
   }
 
   async put(file: Buffer, metadata: Omit<StoredFile, "sizeBytes" | "sha256">): Promise<StoredFile> {
-    void file;
-    void metadata;
-    throw notReady("Almacenamiento local");
+    const storageKey = metadata.storageKey.replaceAll("\\", "/");
+    const resolvedRoot = path.resolve(this.root);
+    const target = path.resolve(this.root, storageKey);
+    if (target !== resolvedRoot && !target.startsWith(`${resolvedRoot}${path.sep}`)) throw new Error("storageKey inválida.");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, file, { flag: "wx" });
+    return {
+      ...metadata,
+      storageKey,
+      sizeBytes: file.byteLength,
+      sha256: crypto.createHash("sha256").update(file).digest("hex"),
+    };
   }
 
   async remove(storageKey: string): Promise<void> {
-    void storageKey;
-    throw notReady("Almacenamiento local");
+    const resolvedRoot = path.resolve(this.root);
+    const target = path.resolve(this.root, storageKey.replaceAll("\\", "/"));
+    if (target !== resolvedRoot && !target.startsWith(`${resolvedRoot}${path.sep}`)) throw new Error("storageKey inválida.");
+    await fs.unlink(target);
   }
 
   async getPath(storageKey: string): Promise<string> {
-    return path.join(this.root, storageKey);
+    const resolvedRoot = path.resolve(this.root);
+    const target = path.resolve(this.root, storageKey.replaceAll("\\", "/"));
+    if (target !== resolvedRoot && !target.startsWith(`${resolvedRoot}${path.sep}`)) throw new Error("storageKey inválida.");
+    return target;
   }
 }
 

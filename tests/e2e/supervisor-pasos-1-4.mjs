@@ -1,4 +1,6 @@
 // Supervisor E2E: Pasos 1–4 contra servidor local (no modifica código).
+import crypto from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 const B = process.env.BASE ?? "http://localhost:3140";
 const SEED = "ConectaLocal-2026!";
 const ts = Date.now().toString().slice(-7);
@@ -17,6 +19,13 @@ class S { // sesión con cookies
   }
   get(p, o) { return this.req("GET", p, undefined, o); } post(p, b, o) { return this.req("POST", p, b, o); } patch(p, b, o) { return this.req("PATCH", p, b, o); }
   async login(email, password = SEED) { return this.post("/api/auth/login", { email, password }); }
+  async upload(path, code, bytes, name = "prueba.pdf", type = "application/pdf") {
+    const form = new FormData(); form.set("requirementCode", code); form.set("file", new File([bytes], name, { type }));
+    const h = { origin: B }; if (this.cookie()) h.cookie = this.cookie();
+    const res = await fetch(B + path, { method: "POST", headers: h, body: form });
+    const text = await res.text(); let json; try { json = JSON.parse(text); } catch {}
+    return { status: res.status, text, json };
+  }
 }
 
 const validData = (rfc = "XAXX010101000") => ({ solicitante: { tipo_persona: "moral", nombre_razon_social: "Ficticia Solar SA", rfc }, servicio_actual: { rpu: "123456789012", tarifa: "GDMTH" }, central: { tecnologia: "solar", capacidad_bruta_kw: 100 } });
@@ -134,6 +143,44 @@ ok("cliente A notificado del alta", !!nEx);
 ok("B no puede marcar notificación de A", (await Bc.s.patch("/api/notifications", { id: nEx?.id })).status === 200 && !((await A.s.get("/api/notifications")).json?.notifications.find((n) => n.id === nEx?.id)?.read_at));
 await A.s.patch("/api/notifications", { id: nEx?.id });
 ok("A marca su notificación como leída", !!(await A.s.get("/api/notifications")).json?.notifications.find((n) => n.id === nEx?.id)?.read_at);
+
+console.log("== P5 documentos y revisión IDC");
+const pdf = Buffer.from("%PDF-1.7\ncontenido ficticio E2E");
+const expectedSha = crypto.createHash("sha256").update(pdf).digest("hex");
+const upload = await A.s.upload(`/api/expedientes/${eA?.id}/documents`, "R01", pdf);
+ok("PDF válido → 201 versión 1", upload.status === 201 && upload.json?.document?.versionNumber === 1);
+ok("sha256 de carga correcto", upload.json?.document?.sha256 === expectedSha);
+const exe = await A.s.upload(`/api/expedientes/${eA?.id}/documents`, "R01", Buffer.from("MZ-not-pdf"), "malware.pdf");
+ok("EXE renombrado a PDF → 400", exe.status === 400);
+const tooLarge = await A.s.upload(`/api/expedientes/${eA?.id}/documents`, "R01", new Uint8Array(20 * 1024 * 1024 + 1), "grande.pdf");
+ok("archivo mayor de 20 MB → 413", tooLarge.status === 413);
+const download = await A.s.get(`/api/documents/${upload.json?.document?.documentId}`);
+const downloadedBytes = Buffer.from(await (await fetch(B + `/api/documents/${upload.json?.document?.documentId}`, { headers: { cookie: A.s.cookie() } })).arrayBuffer());
+ok("descarga devuelve bytes y cabeceras seguras", download.status === 200 && crypto.createHash("sha256").update(downloadedBytes).digest("hex") === expectedSha);
+const downloadResponse = await fetch(B + `/api/documents/${upload.json?.document?.documentId}`, { headers: { cookie: A.s.cookie() } });
+ok("descarga attachment + nosniff", /attachment/i.test(downloadResponse.headers.get("content-disposition") ?? "") && downloadResponse.headers.get("x-content-type-options") === "nosniff");
+ok("cliente B no descarga documento de A", (await Bc.s.get(`/api/documents/${upload.json?.document?.documentId}`)).status === 404);
+ok("admin no descarga documentos", (await admin.get(`/api/documents/${upload.json?.document?.documentId}`)).status === 403);
+const validated = await coord.post(`/api/expedientes/${eA?.id}/requirements/R01`, { action: "validate" });
+ok("IDC valida requisito", validated.status === 200);
+const internal = await coord.post(`/api/expedientes/${eA?.id}/requirements/R02`, { action: "observe", reason: "Corrección interna ficticia", visibility: "interno_idc" });
+ok("observación interna creada", internal.status === 200);
+const clientReview = await A.s.get(`/api/expedientes/${eA?.id}/requirements/R01`);
+ok("cliente no ve observación interna", !(clientReview.json?.requirements ?? []).flatMap((r) => r.observations ?? []).some((o) => o.visibility === "interno_idc"));
+const noReason = await coord.post(`/api/expedientes/${eA?.id}/requirements/R03`, { action: "observe" });
+ok("observar sin motivo → 400", noReason.status === 400);
+const second = await A.s.upload(`/api/expedientes/${eA?.id}/documents`, "R01", Buffer.from("%PDF-1.7\nsegunda versión"), "segunda.pdf");
+const reviewAfterSecond = await coord.get(`/api/expedientes/${eA?.id}/requirements/R01`);
+const r01 = reviewAfterSecond.json?.requirements?.find((r) => r.requirement_code === "R01");
+ok("nueva versión invalida revisión previa y vuelve a cargado", second.status === 201 && r01?.status === "cargado" && r01?.versions?.length === 2 && r01.versions.some((v) => v.change_reason === "invalidado_por_cambio"));
+const dbPath = process.env.LOCAL_DATA_DIR ? `${process.env.LOCAL_DATA_DIR}\\conecta-agil.sqlite` : null;
+if (dbPath) {
+  const db = new DatabaseSync(dbPath);
+  db.prepare("UPDATE gates SET status = 'cerrado' WHERE expediente_id = ? AND gate_code = 'G1'").run(eA?.id);
+  db.close();
+  const locked = await A.s.upload(`/api/expedientes/${eA?.id}/documents`, "R01", pdf, "bloqueado.pdf");
+  ok("carga con G1 cerrado → 409", locked.status === 409);
+}
 
 console.log("== P3/P4 varios");
 const oc = await anon.get("/api/auth/clear?next=//evil.example/x");
