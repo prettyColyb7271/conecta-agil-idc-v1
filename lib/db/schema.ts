@@ -16,6 +16,7 @@ export const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   notifications: ["id", "user_id", "expediente_id", "type", "priority", "title", "body", "read_at", "created_at"],
   audit_events: ["id", "actor_id", "actor_role", "expediente_id", "event_type", "entity_type", "entity_id", "metadata_json", "created_at"],
   export_jobs: ["id", "requested_by", "export_type", "status", "manifest_path", "created_at", "completed_at", "error_message"],
+  password_setup_tokens: ["id", "user_id", "token_hash", "expires_at", "used_at", "created_by", "created_at"],
 };
 
 export const TABLE_PRIMARY_KEYS: Record<TableName, string> = {
@@ -34,6 +35,7 @@ export const TABLE_PRIMARY_KEYS: Record<TableName, string> = {
   notifications: "id",
   audit_events: "id",
   export_jobs: "id",
+  password_setup_tokens: "id",
 };
 
 export function assertTableName(table: string): asserts table is TableName {

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { assertSameOrigin, auditEvent, generateTemporaryPassword, getCurrentUser, hashPassword, passwordChangeRequired, withTransaction } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, createPasswordSetupToken, getCurrentUser, hashPassword, passwordChangeRequired, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
 
@@ -40,17 +40,17 @@ export async function POST(request: Request) {
       if (database.prepare("SELECT id FROM users WHERE email = ?").get(email)) return NextResponse.json({ error: "No fue posible crear el Gestor IDC." }, { status: 409 });
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      const temporaryPassword = generateTemporaryPassword();
       withTransaction(() => {
-        database.prepare("INSERT INTO users (id, email, display_name, role, status, password_hash, must_change_password, created_at, updated_at) VALUES (?, ?, ?, 'coordinador_idc', 'activo', ?, 1, ?, ?)").run(id, email, displayName, hashPassword(temporaryPassword), now, now);
+        database.prepare("INSERT INTO users (id, email, display_name, role, status, password_hash, must_change_password, created_at, updated_at) VALUES (?, ?, ?, 'coordinador_idc', 'activo', ?, 1, ?, ?)").run(id, email, displayName, hashPassword(crypto.randomBytes(32).toString("base64url")), now, now);
         auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "alta_gestor_idc", entityType: "user", entityId: id, metadata: { email } });
       });
-      return NextResponse.json({ user: { id, email, display_name: displayName, role: "coordinador_idc", status: "activo" }, temporaryPassword }, { status: 201 });
+      const setup = createPasswordSetupToken(id, actor.id);
+      return NextResponse.json({ user: { id, email, display_name: displayName, role: "coordinador_idc", status: "activo" }, setupUrl: new URL(`/definir-contrasena?token=${encodeURIComponent(setup.token)}`, request.url).toString(), expiresAt: setup.expiresAt }, { status: 201 });
     }
     if (!body.userId || !body.action) return NextResponse.json({ error: "Faltan datos." }, { status: 400 });
     const target = database.prepare("SELECT id, role, status FROM users WHERE id = ? AND role != 'admin_seguridad'").get(body.userId) as { id: string; role: string; status: string } | undefined;
     if (!target) return NextResponse.json({ error: "Usuario no disponible." }, { status: 404 });
-    let returnValue: { ok: boolean; temporaryPassword?: string; unassignedCount?: number } | undefined;
+    let returnValue: { ok: boolean; setupUrl?: string; expiresAt?: string; unassignedCount?: number } | undefined;
     withTransaction(() => {
       const now = new Date().toISOString();
       if (body.action === "block") {
@@ -74,11 +74,11 @@ export async function POST(request: Request) {
         auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "desbloqueo", entityType: "user", entityId: target.id });
       } else if (body.action === "reset_password") {
         if (target.role !== "coordinador_idc") throw new Error("USER_NOT_MANAGER");
-        const temporaryPassword = generateTemporaryPassword();
-        database.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?").run(hashPassword(temporaryPassword), now, target.id);
+        database.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?").run(hashPassword(crypto.randomBytes(32).toString("base64url")), now, target.id);
         database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
         auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "reset_contrasena", entityType: "user", entityId: target.id });
-        returnValue = { ok: true, temporaryPassword };
+        const setup = createPasswordSetupToken(target.id, actor.id);
+        returnValue = { ok: true, setupUrl: new URL(`/definir-contrasena?token=${encodeURIComponent(setup.token)}`, request.url).toString(), expiresAt: setup.expiresAt };
       } else {
         database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
         auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "revocacion_sesiones", entityType: "user", entityId: target.id });

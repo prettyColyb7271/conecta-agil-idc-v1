@@ -37,49 +37,50 @@ try {
   ok("cliente no puede crear gestor → 403", (await cli.post("/api/admin/users", { action: "create_gestor", email: "x1@example.invalid", displayName: "X" })).status === 403);
   ok("Gestor IDC no puede crear gestor → 403", (await idc.post("/api/admin/users", { action: "create_gestor", email: "x2@example.invalid", displayName: "X" })).status === 403);
   const c = await adm.post("/api/admin/users", { action: "create_gestor", email, displayName: "Nuevo Gestor", password: "ElegidaPorAdmin-123" });
-  const temp = c.json?.temporaryPassword ?? c.json?.temporary_password ?? c.json?.password ?? Object.values(c.json?.user ?? {}).find((v) => typeof v === "string" && v.length >= 16 && !v.includes("@") && !/^[0-9a-f-]{36}$/.test(v)) ?? (JSON.stringify(c.json).match(/"(?:temp\w*|password)"\s*:\s*"([^"]+)"/i) ?? [])[1];
-  ok("alta → 201 con temporal ≥16 (ignora password del admin)", c.status === 201 && typeof temp === "string" && temp.length >= 16 && temp !== "ElegidaPorAdmin-123", JSON.stringify(c.json));
+  const setupUrl = c.json?.setupUrl;
+  const setupToken = setupUrl && new URL(setupUrl).searchParams.get("token");
+  ok("alta → 201 con enlace de un solo uso (sin contraseña)", c.status === 201 && typeof setupUrl === "string" && typeof setupToken === "string" && !/temporaryPassword|password/i.test(JSON.stringify(c.json)), JSON.stringify(c.json));
   const uid = c.json?.user?.id;
   ok("intentar crear admin vía create_gestor con role → sigue siendo coordinador_idc", (await adm.post("/api/admin/users", { action: "create_gestor", email: "x3@example.invalid", displayName: "X", role: "admin_seguridad" })).json?.user?.role !== "admin_seguridad");
   const list = await adm.get("/api/admin/users");
-  ok("GET usuarios no expone temporal ni hashes", !list.text.includes(temp) && !/scrypt\$|password_hash/.test(list.text));
+  ok("GET usuarios no expone enlaces ni hashes", !list.text.includes(setupToken) && !/scrypt\$|password_hash|temporaryPassword/.test(list.text));
   ok("GET usuarios no expone data_json/expedientes", !/data_json|IDC-DEMO-0001|XAXX/.test(list.text));
 
-  console.log("== primer acceso");
+  console.log("== definición por enlace");
   const g = new S();
-  ok("login con la contraseña que mandó el admin → falla", (await g.login(email, "ElegidaPorAdmin-123")).status !== 200);
-  ok("login con temporal → 200", (await g.login(email, temp)).status === 200);
-  for (const p of ["/gestor", "/gestor/proyectos", "/portal", "/admin"]) { const r = await g.get(p); ok(`temporal: ${p} → /cambiar-contrasena`, [303, 307, 308].includes(r.status) && /cambiar-contrasena/.test(r.loc ?? ""), `${r.status} ${r.loc}`); }
-  for (const p of ["/api/expedientes", "/api/notifications", "/api/coordinator/requests", "/api/expedientes/x/requirements/R01", "/api/documents/x"]) { const r = await g.get(p); ok(`temporal: API ${p} → 403`, r.status === 403, r.status); }
-  ok("temporal: /cambiar-contrasena 200", (await g.get("/cambiar-contrasena")).status === 200);
+  ok("el enlace permite definir una contraseña", (await g.post("/api/auth/setup-password", { token: setupToken, newPassword: "NuevaSegura-2026!" })).status === 200);
+  ok("el enlace ya no puede reutilizarse", (await g.post("/api/auth/setup-password", { token: setupToken, newPassword: "OtraSegura-2026!" })).status === 400);
+  ok("login con contraseña definida → 200", (await g.login(email, "NuevaSegura-2026!")).status === 200);
+  ok("página de definición disponible sin sesión", (await g.get(`/definir-contrasena?token=${setupToken}`)).status === 200);
   const cp = (b) => g.post("/api/auth/change-password", b);
-  ok("cambio sin actual correcta → 400/401/403", [400, 401, 403].includes((await cp({ currentPassword: "mala-mala-mala", newPassword: "NuevaSegura-2026!" })).status));
-  ok("cambio <12 → 400", (await cp({ currentPassword: temp, newPassword: "Corta-1" })).status === 400);
-  ok("cambio igual a temporal → 400", (await cp({ currentPassword: temp, newPassword: temp })).status === 400);
-  const g2 = new S(); await g2.login(email, temp);
-  const ok1 = await cp({ currentPassword: temp, newPassword: "NuevaSegura-2026!" });
+  ok("cambio sin actual correcta → 400/401/403", [400, 401, 403].includes((await cp({ currentPassword: "mala-mala-mala", newPassword: "OtraSegura-2026!" })).status));
+  ok("cambio <12 → 400", (await cp({ currentPassword: "NuevaSegura-2026!", newPassword: "Corta-1" })).status === 400);
+  ok("cambio igual a actual → 400", (await cp({ currentPassword: "NuevaSegura-2026!", newPassword: "NuevaSegura-2026!" })).status === 400);
+  const g2 = new S(); await g2.login(email, "NuevaSegura-2026!");
+  const ok1 = await cp({ currentPassword: "NuevaSegura-2026!", newPassword: "OtraSegura-2026!" });
   ok("cambio válido → 200", ok1.status === 200, ok1.text);
   ok("tras cambio: /gestor 200 y API 200", (await g.get("/gestor")).status === 200 && (await g.get("/api/expedientes")).status === 200);
   ok("tras cambio: otra sesión (g2) revocada", [401, 403].includes((await g2.get("/api/expedientes")).status));
-  ok("temporal ya no sirve para login", (await new S().login(email, temp)).status !== 200);
+  ok("la contraseña anterior ya no sirve para login", (await new S().login(email, "NuevaSegura-2026!")).status !== 200);
 
   console.log("== reset");
   const rs = await adm.post("/api/admin/users", { action: "reset_password", userId: uid });
-  const temp2 = (JSON.stringify(rs.json).match(/"(?:temp\w*|password)"\s*:\s*"([^"]+)"/i) ?? [])[1];
-  ok("reset → 200 con nueva temporal", rs.status === 200 && temp2 && temp2 !== temp, JSON.stringify(rs.json));
+  const setupUrl2 = rs.json?.setupUrl;
+  const temp2 = setupUrl2 && new URL(setupUrl2).searchParams.get("token");
+  ok("reset → 200 con nuevo enlace", rs.status === 200 && temp2 && temp2 !== setupToken, JSON.stringify(rs.json));
   ok("reset revoca sesión activa", [401, 403].includes((await g.get("/api/expedientes")).status));
-  ok("contraseña cambiada ya no sirve tras reset", (await new S().login(email, "NuevaSegura-2026!")).status !== 200);
-  const g3 = new S(); await g3.login(email, temp2);
-  ok("tras reset: vuelve a exigir cambio", (await g3.get("/api/expedientes")).status === 403);
+  ok("contraseña cambiada ya no sirve tras reset", (await new S().login(email, "OtraSegura-2026!")).status !== 200);
+  const g3 = new S();
+  ok("tras reset: enlace define nueva contraseña", (await g3.post("/api/auth/setup-password", { token: temp2, newPassword: "TerceraSegura-2026!" })).status === 200);
   ok("cliente no puede resetear → 403", (await cli.post("/api/admin/users", { action: "reset_password", userId: uid })).status === 403);
 
   console.log("== rastros");
   const db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"), { readOnly: true });
   const dump = JSON.stringify([db.prepare("select * from audit_events").all(), db.prepare("select * from users").all(), db.prepare("select * from notifications").all()]);
-  ok("temporales/contraseñas no están en BD en claro (audit, users, notifications)", ![temp, temp2, "NuevaSegura-2026!"].some((s) => dump.includes(s)));
-  ok("temporales no aparecen en logs del servidor", ![temp, temp2].some((s) => serverLog.includes(s)));
+  ok("enlaces/contraseñas no están en BD en claro (audit, users, notifications)", !["NuevaSegura-2026!", "OtraSegura-2026!", "TerceraSegura-2026!"].some((s) => dump.includes(s)));
+  ok("enlaces no aparecen en logs del servidor", ![setupToken, temp2].some((s) => serverLog.includes(s)));
   const ev = db.prepare("select event_type from audit_events").all().map((r) => r.event_type);
-  ok("auditoría: alta, cambio y reset registrados", ["cambio_contrasena", "reset_contrasena"].every((e) => ev.includes(e)) && ev.some((e) => /alta_gestor/.test(e)), [...new Set(ev)].join(","));
+  ok("auditoría: alta, definición y reset registrados", ["definicion_contrasena_enlace", "reset_contrasena"].every((e) => ev.includes(e)) && ev.some((e) => /alta_gestor/.test(e)), [...new Set(ev)].join(","));
   db.close();
 } finally {
   server?.kill(); await new Promise((r) => setTimeout(r, 800));

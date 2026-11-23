@@ -16,6 +16,7 @@ export const TABLE_NAMES = [
   "notifications",
   "audit_events",
   "export_jobs",
+  "password_setup_tokens",
 ] as const;
 
 export type TableName = (typeof TABLE_NAMES)[number];

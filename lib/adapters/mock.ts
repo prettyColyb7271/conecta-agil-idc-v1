@@ -30,6 +30,7 @@ class MockDatabaseAdapter implements DatabaseAdapter {
       notifications: new Map(),
       audit_events: new Map(),
       export_jobs: new Map(),
+      password_setup_tokens: new Map(),
     };
     this.seedFromMockData();
   }

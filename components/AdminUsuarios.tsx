@@ -19,7 +19,7 @@ export default function AdminUsuarios() {
   const [requests, setRequests] = useState<{ id: string; email: string; display_name: string; requested_role: Role; created_at: string }[]>([]);
   const [newManager, setNewManager] = useState({ displayName: "", email: "" });
   const [managerMessage, setManagerMessage] = useState("");
-  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [setupUrl, setSetupUrl] = useState("");
   const localMode = process.env.NEXT_PUBLIC_MODO === "local";
   useEffect(() => {
     if (!localMode || !session) return;
@@ -72,12 +72,12 @@ export default function AdminUsuarios() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId, action }),
       });
-      const data = await response.json() as { error?: string; temporaryPassword?: string; unassignedCount?: number };
+      const data = await response.json() as { error?: string; setupUrl?: string; unassignedCount?: number };
       if (!response.ok) {
         setManagerMessage(data.error ?? "No fue posible actualizar el usuario.");
-      } else if (action === "reset_password" && data.temporaryPassword) {
-        setTemporaryPassword(data.temporaryPassword);
-        setManagerMessage("Contraseña temporal generada. Cópiala ahora, no se volverá a mostrar.");
+      } else if (action === "reset_password" && data.setupUrl) {
+        setSetupUrl(data.setupUrl);
+        setManagerMessage("Enlace de definición generado. Entrégalo al Gestor IDC; vence en 24 horas y solo puede usarse una vez.");
       } else if (action === "block" && data.unassignedCount) {
         setManagerMessage(`${data.unassignedCount} expediente(s) quedó(aron) sin responsable activo; se notificó a los demás Gestores IDC.`);
       }
@@ -91,14 +91,14 @@ export default function AdminUsuarios() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "create_gestor", displayName: newManager.displayName, email: newManager.email }),
       });
-      const data = await response.json() as { error?: string; temporaryPassword?: string };
+      const data = await response.json() as { error?: string; setupUrl?: string };
       if (!response.ok) {
         setManagerMessage(data.error ?? "No fue posible crear el Gestor IDC.");
         return;
       }
       setNewManager({ displayName: "", email: "" });
-      setTemporaryPassword(data.temporaryPassword ?? "");
-      setManagerMessage("Gestor IDC creado. Cópiala ahora, no se volverá a mostrar.");
+      setSetupUrl(data.setupUrl ?? "");
+      setManagerMessage("Gestor IDC creado. Entrega el enlace al Gestor IDC; vence en 24 horas y solo puede usarse una vez.");
       await refreshUsers();
     };
     return (
@@ -110,7 +110,7 @@ export default function AdminUsuarios() {
             <input required type="email" value={newManager.email} onChange={(event) => setNewManager({ ...newManager, email: event.target.value })} placeholder="Correo" className="border px-2 py-1 text-sm" />
             <button type="submit" className="border border-[#5885b1] px-2 py-1 text-sm font-bold sm:col-span-2">Crear Gestor IDC</button>
             {managerMessage && <p className="text-xs sm:col-span-4">{managerMessage}</p>}
-            {temporaryPassword && <p className="break-all bg-amber-100 p-2 text-sm font-bold sm:col-span-4">Contraseña temporal (cópiala ahora, no se volverá a mostrar): {temporaryPassword}</p>}
+            {setupUrl && <p className="break-all bg-amber-100 p-2 text-sm font-bold sm:col-span-4">Enlace de un solo uso (vence en 24 horas): {setupUrl}</p>}
           </form>
           {localUsers.map((user) => (
             <div key={user.id} className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2 text-sm">
