@@ -66,11 +66,12 @@ export function auditEvent(input: {
   eventType: string;
   entityType: string;
   entityId?: string | null;
+  expedienteId?: string | null;
   metadata?: Record<string, unknown>;
 }): void {
   const database = getDatabase();
   database.prepare(
-    "INSERT INTO audit_events (id, actor_id, actor_role, event_type, entity_type, entity_id, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO audit_events (id, actor_id, actor_role, event_type, entity_type, entity_id, expediente_id, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     crypto.randomUUID(),
     input.actorId ?? null,
@@ -78,6 +79,7 @@ export function auditEvent(input: {
     input.eventType,
     input.entityType,
     input.entityId ?? null,
+    input.expedienteId ?? null,
     JSON.stringify(input.metadata ?? {}),
     new Date().toISOString(),
   );
@@ -126,7 +128,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 export async function requireRole(role: Role): Promise<AuthUser | null> {
   const user = await getCurrentUser();
   if (getAppMode() === "demo") return null;
-  if (!user) redirect("/");
+  if (!user) redirect("/api/auth/clear?next=/");
   if (user.role !== role) redirect(roleHome[user.role]);
   return user;
 }

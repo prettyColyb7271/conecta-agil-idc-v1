@@ -41,6 +41,10 @@ export async function POST(request: Request) {
       auditEvent({ actorId: user?.id ?? null, actorRole: user?.role ?? null, eventType: "login_fallido", entityType: "user", entityId: user?.id ?? null, metadata: { email } });
       return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 401 });
     }
+    const rejectedRequest = getDatabase().prepare(
+      "SELECT 1 FROM account_requests WHERE user_id = ? AND status = 'rechazada' LIMIT 1",
+    ).get(user.id);
+    if (rejectedRequest) return NextResponse.json({ error: "Tu solicitud de cuenta no fue aprobada. Contacta a IDC." }, { status: 403 });
     if (user.status === "pendiente") return NextResponse.json({ error: "Tu cuenta está pendiente de aprobación." }, { status: 403 });
     if (user.status === "bloqueado") return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 403 });
 

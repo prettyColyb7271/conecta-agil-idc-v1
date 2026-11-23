@@ -13,7 +13,9 @@ export function proxy(request: NextRequest) {
   if (process.env.APP_MODE !== "local") return NextResponse.next();
   const isProtected = protectedPrefixes.some((prefix) => request.nextUrl.pathname === prefix || request.nextUrl.pathname.startsWith(`${prefix}/`));
   if (isProtected && !request.cookies.has("conecta-session")) {
-    return NextResponse.redirect(new URL("/", request.url));
+    const response = NextResponse.redirect(new URL("/", request.url));
+    response.cookies.delete("conecta-role");
+    return response;
   }
   const required = requiredRoles.find(([prefix]) => request.nextUrl.pathname === prefix || request.nextUrl.pathname.startsWith(`${prefix}/`));
   const role = request.cookies.get("conecta-role")?.value;

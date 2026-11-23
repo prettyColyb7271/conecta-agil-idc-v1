@@ -7,6 +7,7 @@ import { ReactNode, useEffect, useSyncExternalStore } from "react";
 import { ROLE_LABEL, Role } from "@/data/mock";
 import { clearSession, useSession } from "@/lib/session";
 import { usePrefs } from "@/components/prefs";
+import NotificationsBell from "@/components/NotificationsBell";
 
 const NAV: Record<Role, { href: string; label: string }[]> = {
   cliente: [
@@ -73,6 +74,7 @@ export default function AppShell({ role, children }: { role: Role; children: Rea
         <div className="text-right text-[11px] leading-tight md:text-xs">
           <p className="font-bold">{now ? formatNow(now) : "\u00A0"}</p>
           <p className="hidden text-slate-300 sm:block">{ADDRESS}</p>
+          <NotificationsBell localMode={localMode} />
         </div>
       </header>
 
