@@ -2,6 +2,7 @@ import { assertSameOrigin, getCurrentUser } from "@/lib/auth";
 import { DocumentTooLargeError, DocumentValidationError, uploadDocument } from "@/lib/data/documents";
 
 type Params = { params: Promise<{ id: string }> };
+const MAX_MULTIPART_BYTES = 21 * 1024 * 1024;
 
 export async function POST(request: Request, { params }: Params) {
   try {
@@ -9,6 +10,9 @@ export async function POST(request: Request, { params }: Params) {
     const user = await getCurrentUser();
     if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
     const { id } = await params;
+    const contentLength = request.headers.get("content-length");
+    if (!contentLength) return Response.json({ error: "Content-Length es requerido para cargar documentos." }, { status: 411 });
+    if (!Number.isSafeInteger(Number(contentLength)) || Number(contentLength) > MAX_MULTIPART_BYTES) return Response.json({ error: "El cuerpo de carga excede el límite permitido." }, { status: 413 });
     const form = await request.formData();
     const requirementCode = String(form.get("requirementCode") ?? "");
     const file = form.get("file");

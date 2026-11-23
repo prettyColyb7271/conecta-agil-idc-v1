@@ -14,6 +14,12 @@ export class DocumentValidationError extends Error {
   }
 }
 export class DocumentTooLargeError extends DocumentValidationError {}
+export class DocumentConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DocumentConflictError";
+  }
+}
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const allowedTypes = new Map([
@@ -22,7 +28,7 @@ const allowedTypes = new Map([
   ["image/jpeg", { extension: "jpg", magic: (bytes: Buffer) => bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])) }],
 ]);
 
-type RequirementRow = { id: string; status: string; document_id: string | null; version_id: string | null; requirement_code: string; name: string; tipo: string; integra: string; sensible: number; validaciones: string };
+type RequirementRow = { id: string; status: string; document_id: string | null; version_id: string | null; observed_reason: string | null; requirement_code: string; name: string; tipo: string; integra: string; sensible: number; validaciones: string };
 type DocumentRow = { id: string; requirement_id: string; status: string };
 
 function assertVisible(user: ScopeUser, expedienteId: string): NonNullable<ReturnType<typeof getExpediente>> {
@@ -128,6 +134,7 @@ export function listRequirementReview(user: AuthUser, expedienteId: string) {
   `).all(expedienteId) as RequirementRow[];
   return rows.map((row) => ({
     ...row,
+    observed_reason: isIdc(user) ? row.observed_reason : null,
     versions: row.document_id ? database.prepare("SELECT id, version_number, original_filename, size_bytes, sha256, change_reason, created_at FROM document_versions WHERE document_id = ? ORDER BY version_number DESC").all(row.document_id) : [],
     observations: database.prepare("SELECT id, visibility, body, created_at FROM observations WHERE requirement_id = ? AND (visibility = 'cliente' OR ? = 1) ORDER BY created_at DESC").all(row.id, isIdc(user) ? 1 : 0) as Array<{ id: string; visibility: "cliente" | "interno_idc"; body: string; created_at: string }>,
   }));
@@ -139,12 +146,17 @@ export function reviewRequirement(user: AuthUser, expedienteId: string, requirem
   if ((action !== "validate" && !reason?.trim()) || (action === "not_applicable" && !reason?.trim())) throw new DocumentValidationError("El motivo es obligatorio.");
   if (visibility !== "cliente" && visibility !== "interno_idc") throw new DocumentValidationError("Visibilidad inválida.");
   const database = getDatabase();
-  const requirement = database.prepare("SELECT id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?").get(expedienteId, requirementCode) as { id: string } | undefined;
+  const gate = database.prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(expedienteId) as { status: string } | undefined;
+  if (gate?.status === "cerrado") throw new DocumentConflictError("La revisión está bloqueada porque G1 está cerrado.");
+  const requirement = database.prepare("SELECT id, status, version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?").get(expedienteId, requirementCode) as { id: string; status: string; version_id: string | null } | undefined;
   if (!requirement) throw new Error("NOT_FOUND");
-  const status = action === "validate" ? "validado_idc" : action === "observe" ? "observado" : "no_aplica_justificado";
+  if (action === "validate" && !requirement.version_id) throw new DocumentConflictError("No hay documento cargado para validar.");
+  const internalNote = action === "observe" && visibility === "interno_idc";
+  const status = internalNote ? requirement.status : action === "validate" ? "validado_idc" : action === "observe" ? "observado" : "no_aplica_justificado";
+  const visibleReason = visibility === "cliente" ? reason : null;
   const now = new Date().toISOString();
   withTransaction(() => {
-    database.prepare("UPDATE expediente_requirements SET status = ?, observed_reason = ?, validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ?").run(status, reason ?? null, action === "validate" ? user.id : null, action === "validate" ? now : null, now, requirement.id);
+    database.prepare("UPDATE expediente_requirements SET status = ?, observed_reason = ?, validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ?").run(status, visibleReason, action === "validate" ? user.id : null, action === "validate" ? now : null, now, requirement.id);
     if (action !== "validate") database.prepare("INSERT INTO observations (id, expediente_id, requirement_id, author_id, visibility, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(crypto.randomUUID(), expedienteId, requirement.id, user.id, visibility, reason, now);
     auditEvent({ actorId: user.id, actorRole: user.role, eventType: action === "validate" ? "validacion_requisito" : action === "observe" ? "observacion_requisito" : "no_aplica_requisito", entityType: "expediente_requirement", entityId: requirement.id, expedienteId, metadata: { requirement_code: requirementCode, visibility } });
     if (visibility === "cliente") notifyClient(expedienteId, action === "validate" ? "Requisito validado" : "Requisito observado", `${requirementCode} fue actualizado en ${expediente.folio}.`);

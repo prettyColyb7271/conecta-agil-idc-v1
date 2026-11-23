@@ -9,13 +9,13 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-agil-e2e-"));
 const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir };
 let server;
 
-function npm(command) {
-  execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", command], { cwd: root, env, stdio: "inherit", shell: true });
+function runScript(script) {
+  execFileSync(process.execPath, [path.join(root, "node_modules", "tsx", "dist", "cli.mjs"), script], { cwd: root, env, stdio: "inherit" });
 }
 
 try {
-  npm("db:migrate");
-  npm("db:seed");
+  runScript("scripts/db-migrate.ts");
+  runScript("scripts/db-seed.ts");
   server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", port], { cwd: root, env, stdio: "inherit" });
   const base = `http://localhost:${port}`;
   const deadline = Date.now() + 30_000;
@@ -31,6 +31,9 @@ try {
   const result = spawn(process.execPath, ["tests/e2e/supervisor-pasos-1-4.mjs"], { cwd: root, env: { ...env, BASE: base }, stdio: "inherit" });
   const code = await new Promise((resolve) => result.on("exit", resolve));
   if (code !== 0) process.exitCode = code ?? 1;
+  const docs = spawn(process.execPath, ["tests/e2e/supervisor-documentos.mjs", root], { cwd: root, env, stdio: "inherit" });
+  const docsCode = await new Promise((resolve) => docs.on("exit", resolve));
+  if (docsCode !== 0) process.exitCode = docsCode ?? 1;
 } finally {
   if (server && !server.killed) {
     server.kill();
