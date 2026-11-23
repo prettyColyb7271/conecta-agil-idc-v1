@@ -2,11 +2,10 @@ import path from "node:path";
 import type { AppMode } from "./types";
 
 export function getAppMode(): AppMode {
-  const configured = process.env.NEXT_PUBLIC_MODO?.trim().toLowerCase();
+  const configured = process.env.APP_MODE?.trim().toLowerCase();
   if (!configured) return "demo";
   if (configured === "demo" || configured === "local") return configured;
-  console.warn(`NEXT_PUBLIC_MODO inválido (${configured}); se usará demo.`);
-  return "demo";
+  throw new Error(`APP_MODE inválido (${configured}); usa demo o local.`);
 }
 
 export function getLocalDataDir(): string {

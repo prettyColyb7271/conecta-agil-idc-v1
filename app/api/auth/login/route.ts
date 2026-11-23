@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
-import { assertSameOrigin, auditEvent, createSession, sessionCookieOptions, verifyPassword, SESSION_COOKIE } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, createSession, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import type { Role } from "@/data/mock";
 
@@ -50,7 +50,8 @@ export async function POST(request: Request) {
     getDatabase().prepare("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(now, now, user.id);
     auditEvent({ actorId: user.id, actorRole: user.role, eventType: "login_ok", entityType: "session", entityId: session.sessionId });
     const response = NextResponse.json({ role: user.role, name: user.display_name });
-    response.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt));
+    response.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt, request));
+    response.cookies.set(ROLE_COOKIE, user.role, sessionCookieOptions(session.expiresAt, request));
     return response;
   } catch (error) {
     if (error instanceof Response) return error;

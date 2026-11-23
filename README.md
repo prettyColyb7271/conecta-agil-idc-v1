@@ -9,6 +9,8 @@ El proyecto tiene dos modos:
 
 Configura `NEXT_PUBLIC_MODO=local` y, opcionalmente, `LOCAL_DATA_DIR` a una carpeta fuera de OneDrive. Si no se define, el modo local usa `%LOCALAPPDATA%\ConectaAgil` en Windows o `./local-data` en otros entornos. No se deben guardar documentos reales en el entorno de prueba.
 
+Para el servidor local configura también `APP_MODE=local` al compilar y al arrancar. `APP_MODE` es la fuente de verdad del servidor; `NEXT_PUBLIC_MODO` solo controla la interfaz cliente. El arranque falla si ambos modos no coinciden con el modo registrado en el último build.
+
 ### Usuarios ficticios del modo local
 
 Después de ejecutar `npm run db:migrate` y `npm run db:seed`, los cuatro usuarios de prueba usan la contraseña ficticia `ConectaLocal-2026!`. Esta contraseña solo sirve para el entorno local de demostración y nunca debe reutilizarse con datos reales.

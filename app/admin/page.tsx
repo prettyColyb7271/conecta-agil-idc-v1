@@ -1,5 +1,10 @@
-// Pantalla de marcador: bloqueos, sesiones e incidentes se construyen en la Fase 6.
-export default function AdminInicio() {
+// Pantalla de marcador: bloqueos, sesiones, e incidentes se construyen en la Fase 6.
+import { requireRole } from "@/lib/auth";
+
+export const instant = false;
+
+export default async function AdminInicio() {
+  await requireRole("admin_seguridad");
   return (
     <section className="rounded-sm bg-[#b6cde3] p-6 text-center text-[#0d1f33]">
       <h2 className="text-xl font-bold">Administración de seguridad</h2>

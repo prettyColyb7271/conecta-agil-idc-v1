@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
-import { assertSameOrigin, auditEvent, revokeSessionByToken, SESSION_COOKIE } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, revokeSessionByToken, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
 
 export async function POST(request: Request) {
   if (getAppMode() !== "local") return NextResponse.json({ ok: true });
@@ -10,7 +10,10 @@ export async function POST(request: Request) {
     const userId = token ? revokeSessionByToken(token) : null;
     if (userId) auditEvent({ actorId: userId, eventType: "logout", entityType: "session", metadata: { revoked: true } });
     const response = NextResponse.json({ ok: true });
-    response.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
+    const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const secure = forwardedProto ? forwardedProto === "https" : new URL(request.url).protocol === "https:";
+    response.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: 0 });
+    response.cookies.set(ROLE_COOKIE, "", { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: 0 });
     return response;
   } catch (error) {
     if (error instanceof Response) return error;

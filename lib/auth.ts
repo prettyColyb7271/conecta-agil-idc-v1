@@ -3,11 +3,13 @@ import "server-only";
 import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
 import { getDatabase } from "@/lib/db/sqlite";
 import type { Role } from "@/data/mock";
 
 export const SESSION_COOKIE = "conecta-session";
+export const ROLE_COOKIE = "conecta-role";
 export const SESSION_HOURS = 8;
 
 export type AuthUser = {
@@ -81,10 +83,24 @@ export function auditEvent(input: {
   );
 }
 
+export function withTransaction<T>(work: () => T): T {
+  const database = getDatabase();
+  database.exec("BEGIN");
+  try {
+    const result = work();
+    database.exec("COMMIT");
+    return result;
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export async function getCurrentUser(): Promise<AuthUser | null> {
-  if (getAppMode() !== "local") return null;
+  await connection();
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
+  if (getAppMode() !== "local") return null;
   const row = getDatabase().prepare(`
     SELECT s.id AS session_id, s.expires_at, s.revoked_at,
            u.id, u.email, u.display_name, u.role, u.status
@@ -108,8 +124,8 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 export async function requireRole(role: Role): Promise<AuthUser | null> {
-  if (getAppMode() === "demo") return null;
   const user = await getCurrentUser();
+  if (getAppMode() === "demo") return null;
   if (!user) redirect("/");
   if (user.role !== role) redirect(roleHome[user.role]);
   return user;
@@ -126,11 +142,13 @@ export function createSession(userId: string): { token: string; sessionId: strin
   return { token, sessionId, expiresAt };
 }
 
-export function sessionCookieOptions(expiresAt: string) {
+export function sessionCookieOptions(expiresAt: string, request: Request) {
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const secure = forwardedProto ? forwardedProto === "https" : new URL(request.url).protocol === "https:";
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     path: "/",
     expires: new Date(expiresAt),
   };

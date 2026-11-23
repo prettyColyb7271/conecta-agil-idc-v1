@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertSameOrigin, auditEvent, getCurrentUser } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, getCurrentUser, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 
 export async function GET() {
@@ -21,17 +21,19 @@ export async function POST(request: Request) {
     const database = getDatabase();
     const target = database.prepare("SELECT id, role, status FROM users WHERE id = ? AND role != 'admin_seguridad'").get(body.userId) as { id: string; role: string; status: string } | undefined;
     if (!target) return NextResponse.json({ error: "Usuario no disponible." }, { status: 404 });
-    const now = new Date().toISOString();
-    if (body.action === "block") {
-      database.prepare("UPDATE users SET status = 'bloqueado', updated_at = ? WHERE id = ?").run(now, target.id);
-      auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "bloqueo", entityType: "user", entityId: target.id });
-    } else if (body.action === "unblock") {
-      database.prepare("UPDATE users SET status = 'activo', updated_at = ? WHERE id = ?").run(now, target.id);
-      auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "desbloqueo", entityType: "user", entityId: target.id });
-    } else {
-      database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
-      auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "revocacion_sesiones", entityType: "user", entityId: target.id });
-    }
+    withTransaction(() => {
+      const now = new Date().toISOString();
+      if (body.action === "block") {
+        database.prepare("UPDATE users SET status = 'bloqueado', updated_at = ? WHERE id = ?").run(now, target.id);
+        auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "bloqueo", entityType: "user", entityId: target.id });
+      } else if (body.action === "unblock") {
+        database.prepare("UPDATE users SET status = 'activo', updated_at = ? WHERE id = ?").run(now, target.id);
+        auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "desbloqueo", entityType: "user", entityId: target.id });
+      } else {
+        database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
+        auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "revocacion_sesiones", entityType: "user", entityId: target.id });
+      }
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Response) return error;
