@@ -1,12 +1,32 @@
 export type AppMode = "demo" | "local";
 
+export const TABLE_NAMES = [
+  "users",
+  "account_requests",
+  "sessions",
+  "expedientes",
+  "expediente_assignments",
+  "requirement_catalog",
+  "expediente_requirements",
+  "documents",
+  "document_versions",
+  "observations",
+  "gates",
+  "external_events",
+  "notifications",
+  "audit_events",
+  "export_jobs",
+] as const;
+
+export type TableName = (typeof TABLE_NAMES)[number];
+
 export type AdapterHealth = {
   ok: boolean;
   detail?: string;
 };
 
 export type DataRecord = {
-  id: string;
+  id?: string;
   [key: string]: unknown;
 };
 
@@ -27,12 +47,14 @@ export type ExportResult = {
 export interface DatabaseAdapter {
   readonly kind: "mock" | "sqlite";
   health(): Promise<AdapterHealth>;
+  schemaVersion(): Promise<number>;
+  tableCounts(): Promise<Partial<Record<TableName, number>>>;
   initialize(): Promise<void>;
   close(): Promise<void>;
-  find(table: string, id: string): Promise<DataRecord | null>;
-  list(table: string): Promise<DataRecord[]>;
-  insert(table: string, record: DataRecord): Promise<DataRecord>;
-  update(table: string, id: string, record: DataRecord): Promise<DataRecord>;
+  find(table: TableName, id: string): Promise<DataRecord | null>;
+  list(table: TableName): Promise<DataRecord[]>;
+  insert(table: TableName, record: DataRecord): Promise<DataRecord>;
+  update(table: TableName, id: string, record: DataRecord): Promise<DataRecord>;
   appendAudit(record: DataRecord): Promise<void>;
 }
 
