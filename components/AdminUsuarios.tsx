@@ -17,6 +17,8 @@ export default function AdminUsuarios() {
   const [usuarios, setUsuarios] = useState(usuariosIniciales);
   const [localUsers, setLocalUsers] = useState<{ id: string; email: string; display_name: string; role: Role; status: EstadoUsuario }[]>([]);
   const [requests, setRequests] = useState<{ id: string; email: string; display_name: string; requested_role: Role; created_at: string }[]>([]);
+  const [newManager, setNewManager] = useState({ displayName: "", email: "", password: "" });
+  const [managerMessage, setManagerMessage] = useState("");
   const localMode = process.env.NEXT_PUBLIC_MODO === "local";
   useEffect(() => {
     if (!localMode || !session) return;
@@ -58,20 +60,47 @@ export default function AdminUsuarios() {
   }
 
   if (localMode && session?.role === "admin_seguridad") {
+    const refreshUsers = async () => {
+      const response = await fetch("/api/admin/users");
+      const data = await response.json() as { users: typeof localUsers };
+      setLocalUsers(data.users);
+    };
     const change = async (userId: string, action: "block" | "unblock" | "revoke") => {
       await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId, action }),
       });
-      const response = await fetch("/api/admin/users");
-      const data = await response.json() as { users: typeof localUsers };
-      setLocalUsers(data.users);
+      await refreshUsers();
+    };
+    const createManager = async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setManagerMessage("");
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "create_gestor", ...newManager }),
+      });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) {
+        setManagerMessage(data.error ?? "No fue posible crear el Gestor IDC.");
+        return;
+      }
+      setNewManager({ displayName: "", email: "", password: "" });
+      setManagerMessage("Gestor IDC creado y activo.");
+      await refreshUsers();
     };
     return (
       <section className="overflow-hidden rounded-sm">
-        <h3 className="bg-[#5885b1] px-3 py-1 text-sm font-bold text-white">Administración de usuarios</h3>
+        <h3 className="bg-[#5885b1] px-3 py-1 text-sm font-bold text-white">Administración de Gestores IDC</h3>
         <div className="space-y-2 bg-[#b6cde3] p-3 text-[#0d1f33]">
+          <form onSubmit={createManager} className="grid gap-2 bg-white p-3 sm:grid-cols-4">
+            <input required value={newManager.displayName} onChange={(event) => setNewManager({ ...newManager, displayName: event.target.value })} placeholder="Nombre completo" className="border px-2 py-1 text-sm" />
+            <input required type="email" value={newManager.email} onChange={(event) => setNewManager({ ...newManager, email: event.target.value })} placeholder="Correo" className="border px-2 py-1 text-sm" />
+            <input required minLength={10} value={newManager.password} onChange={(event) => setNewManager({ ...newManager, password: event.target.value })} placeholder="Contraseña temporal" className="border px-2 py-1 text-sm" />
+            <button type="submit" className="border border-[#5885b1] px-2 py-1 text-sm font-bold">Crear Gestor IDC</button>
+            {managerMessage && <p className="text-xs sm:col-span-4">{managerMessage}</p>}
+          </form>
           {localUsers.map((user) => (
             <div key={user.id} className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2 text-sm">
               <span><b>{user.display_name}</b><span className="ml-2 text-xs text-slate-500">{user.email}</span></span>

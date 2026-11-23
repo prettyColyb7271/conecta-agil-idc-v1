@@ -183,6 +183,18 @@ if (dbPath) {
 }
 
 console.log("== P3/P4 varios");
+const managerEmail = `gestor.admin.${ts}@example.invalid`;
+const managerPassword = "Gestor-Admin-2026!";
+const createdManager = await admin.post("/api/admin/users", { action: "create_gestor", displayName: "Gestor creado por admin", email: managerEmail, password: managerPassword });
+ok("admin crea Gestor IDC sin límite de cupo", createdManager.status === 201 && createdManager.json?.user?.role === "coordinador_idc");
+const manager = new S();
+ok("Gestor IDC creado puede iniciar sesión", (await manager.login(managerEmail, managerPassword)).status === 200);
+const managed = (await admin.get("/api/admin/users")).json?.users?.find((user) => user.email === managerEmail);
+ok("Gestor IDC creado aparece en administración", managed?.role === "coordinador_idc" && managed?.status === "activo");
+await admin.post("/api/admin/users", { userId: managed?.id, action: "block" });
+ok("admin bloquea Gestor IDC y revoca su acceso", [401, 403].includes((await manager.get("/api/expedientes")).status));
+await admin.post("/api/admin/users", { userId: managed?.id, action: "unblock" });
+ok("admin desbloquea Gestor IDC", (await manager.get("/api/expedientes")).status === 200);
 const oc = await anon.get("/api/auth/clear?next=//evil.example/x");
 ok("/api/auth/clear no redirige a dominio externo", !(oc.loc ?? "").includes("evil.example"), oc.loc);
 const oc2 = await anon.get("/api/auth/clear?next=/%5Cevil.example/x");
