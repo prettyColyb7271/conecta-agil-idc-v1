@@ -63,7 +63,7 @@ function notifyIdc(expedienteId: string, title: string, body: string): void {
   for (const user of idc) insert.run(crypto.randomUUID(), user.id, expedienteId, title, body, now);
 }
 
-export async function uploadDocument(user: AuthUser, expedienteId: string, requirementCode: string, file: File) {
+export async function uploadDocument(user: AuthUser, expedienteId: string, requirementCode: string, file: File, sourceVersionId?: string) {
   const expediente = assertVisible(user, expedienteId);
   if (user.role === "cliente") {
     const catalog = getDatabase().prepare("SELECT integra FROM requirement_catalog WHERE code = ?").get(requirementCode) as { integra: string } | undefined;
@@ -83,6 +83,11 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
     WHERE er.expediente_id = ? AND rc.code = ?
   `).get(expedienteId, requirementCode) as RequirementRow | undefined;
   if (!requirement) throw new Error("NOT_FOUND");
+  const sourceVersion = sourceVersionId
+    ? database.prepare("SELECT id, sha256, document_id FROM document_versions WHERE id = ?").get(sourceVersionId) as { id: string; sha256: string; document_id: string } | undefined
+    : undefined;
+  if (sourceVersionId && (!sourceVersion || sourceVersion.document_id !== requirement.document_id)) throw new DocumentValidationError("La versión de borrador no pertenece al requisito.");
+  if (sourceVersionId && requirement.status !== "pendiente_firma_presencial") throw new DocumentConflictError("El formato no está listo para recibir un escaneo firmado.");
   const document = requirement.document_id
     ? database.prepare("SELECT id, requirement_id, status FROM documents WHERE id = ?").get(requirement.document_id) as DocumentRow | undefined
     : undefined;
@@ -96,9 +101,9 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
   try {
     withTransaction(() => {
       if (!document) database.prepare("INSERT INTO documents (id, expediente_id, requirement_id, document_type, source, sensitivity, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'cargado', ?, ?, ?)").run(documentId, expedienteId, requirement.id, requirementCode, isIdc(user) ? "idc" : "cliente", requirement.sensible ? "sensible" : "normal", user.id, now, now);
-      else database.prepare("UPDATE documents SET status = 'cargado', updated_at = ? WHERE id = ?").run(now, documentId);
-      database.prepare("INSERT INTO document_versions (id, document_id, version_number, storage_key, original_filename, mime_type, size_bytes, sha256, author_id, origin, change_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'carga', ?, ?)").run(versionId, documentId, versionNumber, stored.storageKey, stored.filename, stored.mimeType, stored.sizeBytes, stored.sha256, user.id, requirement.status === "validado_idc" ? "invalidado_por_cambio" : null, now);
-      database.prepare("UPDATE expediente_requirements SET status = 'cargado', document_id = ?, version_id = ?, observed_reason = NULL, updated_at = ? WHERE id = ?").run(documentId, versionId, now, requirement.id);
+      else database.prepare("UPDATE documents SET status = ?, updated_at = ? WHERE id = ?").run(sourceVersion ? "escaneo_recibido" : "cargado", now, documentId);
+      database.prepare("INSERT INTO document_versions (id, document_id, version_number, storage_key, original_filename, mime_type, size_bytes, sha256, author_id, origin, change_reason, source_version_id, derived_from_version_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'carga', ?, ?, ?, ?)").run(versionId, documentId, versionNumber, stored.storageKey, stored.filename, stored.mimeType, stored.sizeBytes, stored.sha256, user.id, sourceVersion ? "escaneo_firmado" : (requirement.status === "validado_idc" ? "invalidado_por_cambio" : null), sourceVersion?.id ?? null, sourceVersion?.id ?? null, now);
+      database.prepare("UPDATE expediente_requirements SET status = ?, document_id = ?, version_id = ?, observed_reason = NULL, updated_at = ? WHERE id = ?").run(sourceVersion ? "escaneo_recibido" : "cargado", documentId, versionId, now, requirement.id);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "carga_documento", entityType: "document_version", entityId: versionId, expedienteId, metadata: { requirement_code: requirementCode, sha256: stored.sha256, size_bytes: stored.sizeBytes } });
       notifyIdc(expedienteId, "Documento recibido", `${requirementCode} fue cargado en ${expediente.folio}.`);
     });
@@ -106,7 +111,29 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
     await adapters.storage.remove(storageKey).catch(() => undefined);
     throw error;
   }
-  return { documentId, versionId, versionNumber, sha256: stored.sha256, sizeBytes: stored.sizeBytes, status: "cargado" };
+  return { documentId, versionId, versionNumber, sha256: stored.sha256, sizeBytes: stored.sizeBytes, status: sourceVersion ? "escaneo_recibido" : "cargado" };
+}
+
+export function verifyScannedDocument(user: AuthUser, expedienteId: string, requirementCode: string, versionId: string) {
+  if (!isIdc(user)) throw new Error("FORBIDDEN");
+  assertVisible(user, expedienteId);
+  const database = getDatabase();
+  const row = database.prepare(`
+    SELECT er.id AS requirement_id, er.status, dv.id, dv.author_id, dv.source_version_id, d.id AS document_id
+    FROM expediente_requirements er JOIN document_versions dv ON dv.id = er.version_id
+    JOIN documents d ON d.id = dv.document_id
+    WHERE er.expediente_id = ? AND er.requirement_code = ? AND dv.id = ?
+  `).get(expedienteId, requirementCode, versionId) as { requirement_id: string; status: string; id: string; author_id: string; source_version_id: string | null; document_id: string } | undefined;
+  if (!row) throw new Error("NOT_FOUND");
+  if (row.status !== "escaneo_recibido" || !row.source_version_id) throw new DocumentConflictError("No hay un escaneo firmado pendiente de verificación.");
+  if (row.author_id === user.id) throw new DocumentConflictError("No puedes verificar un escaneo que tú mismo subiste.");
+  const now = new Date().toISOString();
+  withTransaction(() => {
+    database.prepare("UPDATE expediente_requirements SET status = 'escaneo_verificado_idc', updated_at = ? WHERE id = ?").run(now, row.requirement_id);
+    database.prepare("UPDATE documents SET status = 'escaneo_verificado_idc', updated_at = ? WHERE id = ?").run(now, row.document_id);
+    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "verificacion_escaneo", entityType: "document_version", entityId: versionId, expedienteId, metadata: { requirement_code: requirementCode, source_version_id: row.source_version_id } });
+  });
+  return { status: "escaneo_verificado_idc", versionId };
 }
 
 export async function downloadDocument(user: AuthUser, documentId: string, versionId?: string) {

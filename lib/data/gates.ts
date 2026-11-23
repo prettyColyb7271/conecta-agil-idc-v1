@@ -56,8 +56,9 @@ function validateClose(id: string, gate: GateCode): void {
     if (missing.length) throw new GateConflictError(`No se puede cerrar ${gate}; faltan requisitos: ${missing.join(", ")}.`);
   };
   if (gate === "G0") {
-    const row = database.prepare("SELECT cliente_id, gestor_id, tramite, nivel_tension FROM expedientes WHERE id = ?").get(id) as { cliente_id?: string; gestor_id?: string; tramite?: string; nivel_tension?: string } | undefined;
+    const row = database.prepare("SELECT cliente_id, gestor_id, tramite, nivel_tension, privacy_accepted_at FROM expedientes WHERE id = ?").get(id) as { cliente_id?: string; gestor_id?: string; tramite?: string; nivel_tension?: string; privacy_accepted_at?: string | null } | undefined;
     if (!row?.cliente_id || !row.gestor_id || !row.tramite || !row.nivel_tension) throw new GateConflictError("G0 requiere expediente, cliente, responsable, trámite y nivel de tensión.");
+    if (!row.privacy_accepted_at) throw new GateConflictError("G0 requiere la aceptación del aviso de privacidad por el cliente.");
   } else if (gate === "G1") {
     requirements(Array.from({ length: 11 }, (_, index) => `R${String(index + 1).padStart(2, "0")}`));
     const r11 = database.prepare("SELECT version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = 'R11'").get(id) as { version_id: string | null } | undefined;
@@ -65,7 +66,7 @@ function validateClose(id: string, gate: GateCode): void {
   } else if (gate === "G2") {
     for (const code of ["R01", "R07"]) {
       const row = database.prepare("SELECT status FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?").get(id, code) as { status: string } | undefined;
-      if (!row || !["validado_idc", "no_aplica_justificado"].includes(row.status)) throw new GateConflictError(`G2 requiere ${code} validado.`);
+      if (!row || row.status !== "escaneo_verificado_idc") throw new GateConflictError(`G2 requiere el escaneo verificado de ${code}.`);
     }
     requireGateEvidence(id, "firma_presencial");
   } else if (gate === "G3") {
@@ -114,7 +115,7 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
   return { id, eventType: input.eventType };
 }
 
-export function transitionGate(user: AuthUser, expedienteId: string, gateCode: string, action: "close" | "reopen", reason?: string) {
+export function transitionGate(user: AuthUser, expedienteId: string, gateCode: string, action: "close" | "reopen", reason?: string, requirementCodes: string[] = []) {
   assertIdc(user);
   assertExpediente(user, expedienteId);
   if (!GATES.includes(gateCode as GateCode)) throw new GateValidationError("Gate inválido.");
@@ -135,10 +136,15 @@ export function transitionGate(user: AuthUser, expedienteId: string, gateCode: s
   } else {
     if (!reason?.trim()) throw new GateValidationError("El motivo de reapertura es obligatorio.");
     if (current.status !== "cerrado") throw new GateConflictError("El gate no está cerrado.");
+    if (gate === "G1" && requirementCodes.length === 0) throw new GateValidationError("Indica qué requisitos regresan a observación al reabrir G1.");
     const now = new Date().toISOString();
     withTransaction(() => {
       database.prepare("UPDATE gates SET status = 'abierto', reopened_at = ?, reopen_reason = ?, closed_by = NULL, closed_at = NULL WHERE expediente_id = ? AND gate_code = ?").run(now, reason.trim(), expedienteId, gate);
-      database.prepare("UPDATE gates SET status = 'bloqueado' WHERE expediente_id = ? AND gate_code = ? AND status = 'abierto'").run(expedienteId, GATES[GATES.indexOf(gate) + 1] ?? "");
+      database.prepare("UPDATE gates SET status = 'bloqueado' WHERE expediente_id = ? AND gate_code > ?").run(expedienteId, gate);
+      if (gate === "G1") {
+        const update = database.prepare("UPDATE expediente_requirements SET status = 'observado', observed_reason = ?, updated_at = ? WHERE expediente_id = ? AND requirement_code = ?");
+        for (const code of requirementCodes) update.run(reason.trim(), now, expedienteId, code);
+      }
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "reapertura_gate", entityType: "gate", entityId: gate, expedienteId, metadata: { gate_code: gate, reason: reason.trim() } });
     });
   }

@@ -1,5 +1,5 @@
 import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
-import { DocumentConflictError, DocumentValidationError, listRequirementReview, reviewRequirement } from "@/lib/data/documents";
+import { DocumentConflictError, DocumentValidationError, listRequirementReview, reviewRequirement, verifyScannedDocument } from "@/lib/data/documents";
 
 type Params = { params: Promise<{ id: string; code: string }> };
 
@@ -26,13 +26,17 @@ export async function POST(request: Request, { params }: Params) {
     if (passwordResponse) return passwordResponse;
     if (!user || user.role !== "coordinador_idc") return Response.json({ error: "No autorizado." }, { status: 403 });
     const { id, code } = await params;
-    let body: { action?: "validate" | "observe" | "not_applicable"; reason?: string; visibility?: "cliente" | "interno_idc" };
+    let body: { action?: "validate" | "observe" | "not_applicable" | "verify_scan"; reason?: string; visibility?: "cliente" | "interno_idc"; versionId?: string };
     try {
       body = await request.json() as typeof body;
     } catch {
       return Response.json({ error: "JSON malformado." }, { status: 400 });
     }
     if (!body.action) return Response.json({ error: "La acción es requerida." }, { status: 400 });
+    if (body.action === "verify_scan") {
+      if (!body.versionId) return Response.json({ error: "versionId es obligatorio." }, { status: 400 });
+      return Response.json({ requirement: verifyScannedDocument(user, id, code, body.versionId) });
+    }
     return Response.json({ requirement: reviewRequirement(user, id, code, body.action, body.reason, body.visibility) });
   } catch (error) {
     if (error instanceof Response) return error;

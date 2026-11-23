@@ -6,15 +6,17 @@ import { Panel } from "@/components/ui";
 type Props = {
   expediente: {
     id: string; folio: string; tramite: string; status: string; data_json: string;
+    privacy_accepted_at: string | null; privacy_accepted_version: string | null;
     gates: Array<{ gate_code: string; status: string }>;
     requirements: Array<{ requirement_code: string; name: string; status: string }>;
   } | null;
   review: Array<{ requirement_code: string; name: string; status: string; integra: string; validaciones: string; observations: Array<{ visibility: string; body: string }> }>;
+  formats: Array<{ document_id: string; document_type: string; status: string; version_id: string; version_number: number; original_filename: string }>;
 };
 
 const input = "w-full rounded border border-[#1b3d66] bg-white px-3 py-2 text-sm text-[#0d1f33]";
 
-export default function LocalPortal({ expediente, review }: Props) {
+export default function LocalPortal({ expediente, review, formats }: Props) {
   const raw = expediente ? JSON.parse(expediente.data_json) as Record<string, Record<string, unknown>> : {};
   const initial = expediente ? {
     solicitante: raw.solicitante,
@@ -39,6 +41,12 @@ export default function LocalPortal({ expediente, review }: Props) {
     if (!response.ok) setError(body.error ?? "No fue posible guardar los datos.");
     else setMessage("Datos guardados correctamente.");
   }
+  async function acceptPrivacyNotice() {
+    const response = await fetch(`/api/expedientes/${currentExpediente.id}/privacy`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: "aviso-privacidad-v1" }) });
+    const body = await response.json() as { error?: string };
+    if (!response.ok) setError(body.error ?? "No fue posible aceptar el aviso.");
+    else window.location.reload();
+  }
   async function upload(code: string, file: File | undefined) {
     if (!file) return;
     setUploadMessage("");
@@ -53,6 +61,10 @@ export default function LocalPortal({ expediente, review }: Props) {
   return <div className="space-y-3">
     <Panel title="Mi expediente">
       <p className="text-sm"><b>Folio:</b> {expediente.folio}</p><p className="text-sm"><b>Trámite:</b> {expediente.tramite}</p><p className="text-sm"><b>Estado:</b> {expediente.status}</p>
+      {!expediente.privacy_accepted_at && <div className="mt-3 rounded border border-amber-500 bg-amber-50 p-3 text-sm"><p><b>Aviso de privacidad (texto pendiente de confirmar con IDC)</b></p><p className="mt-1">Acepta la versión registrada para poder avanzar el gate G0.</p><button onClick={() => void acceptPrivacyNotice()} className="mt-2 rounded bg-[#0d1f33] px-3 py-1.5 font-semibold text-white">Aceptar aviso</button></div>}
+    </Panel>
+    <Panel title="Formatos generados">
+      {formats.length ? <ul className="space-y-2 text-sm">{formats.filter((item, index, list) => list.findIndex((other) => other.document_type === item.document_type) === index).map((format) => <li key={format.document_id}><a className="font-bold underline" href={`/api/documents/${format.document_id}`}>{format.document_type} · {format.original_filename}</a><span className="ml-2 text-xs">({format.status})</span></li>)}</ul> : <p className="text-sm">Aún no hay formatos generados. El Gestor IDC los genera después de cerrar G1.</p>}
     </Panel>
     <Panel title="Captura de datos F-01 / F-04">
       <div className="grid gap-3 md:grid-cols-2 text-[#0d1f33]">

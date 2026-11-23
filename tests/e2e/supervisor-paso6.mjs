@@ -1,4 +1,5 @@
 const B = process.env.BASE ?? "http://localhost:3140";
+import fs from "node:fs/promises";
 let pass = 0, fail = 0;
 const ok = (name, condition, extra = "") => {
   if (condition) { pass++; console.log("  ✅", name); }
@@ -33,15 +34,30 @@ const gestor = new Session();
 const login = await gestor.request("POST", "/api/auth/login", { email: "coordinador.demo@example.invalid", password: "ConectaLocal-2026!" });
 ok("Gestor IDC inicia sesión", login.status === 200);
 const expedientes = await gestor.request("GET", "/api/expedientes");
-const expediente = expedientes.json?.expedientes?.[0];
+const expediente = expedientes.json?.expedientes?.find((item) => item.folio === "IDC-DEMO-0001") ?? expedientes.json?.expedientes?.[0];
 ok("hay expediente de semilla", Boolean(expediente?.id));
 if (expediente) {
   const gates = await gestor.request("GET", `/api/expedientes/${expediente.id}/gates`);
   ok("consulta G0–G7", gates.status === 200 && gates.json?.gates?.length === 8);
+  const beforePrivacy = await gestor.request("POST", `/api/expedientes/${expediente.id}/gates`, { action: "close", gateCode: "G0" });
+  ok("G0 sin aviso de privacidad → 409", beforePrivacy.status === 409 && /privacidad/i.test(beforePrivacy.json?.error ?? ""));
+  const client = new Session();
+  await client.request("POST", "/api/auth/login", { email: "cliente.demo@example.invalid", password: "ConectaLocal-2026!" });
+  const privacy = await client.request("POST", `/api/expedientes/${expediente.id}/privacy`, { version: "aviso-privacidad-v1" });
+  ok("cliente acepta aviso de privacidad", privacy.status === 200, `${privacy.status} ${privacy.text}`);
+  const afterPrivacy = await gestor.request("POST", `/api/expedientes/${expediente.id}/gates`, { action: "close", gateCode: "G0" });
+  ok("G0 con aviso aceptado → 200", afterPrivacy.status === 200, `${afterPrivacy.status} ${afterPrivacy.text}`);
   const closeG1 = await gestor.request("POST", `/api/expedientes/${expediente.id}/gates`, { action: "close", gateCode: "G1" });
   ok("G1 incompleto queda bloqueado", closeG1.status === 409, closeG1.text);
+  const formatBeforeG1 = await gestor.request("POST", `/api/expedientes/${expediente.id}/formats`, { formatCode: "F-01" });
+  ok("F-01 antes de G1 cerrado → 409", formatBeforeG1.status === 409);
+  const clientFormat = await client.request("POST", `/api/expedientes/${expediente.id}/formats`, { formatCode: "F-01" });
+  ok("cliente no puede generar formatos", clientFormat.status === 403);
   const invalidFormat = await gestor.request("POST", `/api/expedientes/${expediente.id}/formats`, { formatCode: "F-99" });
   ok("formato desconocido devuelve 400", invalidFormat.status === 400);
+  let publicTemplate = true;
+  try { await fs.stat(`${process.cwd()}/public/plantillas`); } catch { publicTemplate = false; }
+  ok("plantilla F-01 no está publicada", !publicTemplate);
 }
 const admin = new Session();
 await admin.request("POST", "/api/auth/login", { email: "seguridad.demo@example.invalid", password: "ConectaLocal-2026!" });

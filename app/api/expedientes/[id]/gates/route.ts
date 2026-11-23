@@ -25,14 +25,15 @@ export async function POST(request: Request, { params }: Params) {
     const blocked = passwordChangeRequired(user);
     if (blocked) return blocked;
     if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
-    const body = await readJson<{ action?: "close" | "reopen" | "event"; gateCode?: string; reason?: string; eventType?: "firma_presencial" | "ingreso_acuse" | "resolucion_cfe" | "contrato" | "uiie" | "medidor" | "cierre"; eventDate?: string; description?: string; documentId?: string }>(request);
+    const body = await readJson<{ action?: "close" | "reopen" | "event"; gateCode?: string; reason?: string; requirementCodes?: string[]; eventType?: "firma_presencial" | "ingreso_acuse" | "resolucion_cfe" | "contrato" | "uiie" | "medidor" | "cierre"; eventDate?: string; description?: string; documentId?: string; lugar?: string; firmantes?: string[] }>(request);
     const id = (await params).id;
     if (body.action === "event") {
       if (!body.eventType) return Response.json({ error: "eventType es obligatorio." }, { status: 400 });
-      return Response.json({ event: addExternalEvent(user, id, { eventType: body.eventType, eventDate: body.eventDate, description: body.description ?? "", documentId: body.documentId }) }, { status: 201 });
+      const description = [body.description, body.lugar ? `Lugar: ${body.lugar}` : "", body.firmantes?.length ? `Firmantes: ${body.firmantes.join(", ")}` : ""].filter(Boolean).join(" · ");
+      return Response.json({ event: addExternalEvent(user, id, { eventType: body.eventType, eventDate: body.eventDate, description, documentId: body.documentId }) }, { status: 201 });
     }
     if (!body.action || !body.gateCode) return Response.json({ error: "action y gateCode son obligatorios." }, { status: 400 });
-    return Response.json({ gates: transitionGate(user, id, body.gateCode, body.action, body.reason) });
+    return Response.json({ gates: transitionGate(user, id, body.gateCode, body.action, body.reason, body.requirementCodes) });
   } catch (error) {
     if (error instanceof Response) return error;
     if (error instanceof RequestInputError) return Response.json({ error: error.message }, { status: error.status });

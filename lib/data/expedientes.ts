@@ -59,6 +59,8 @@ export type ExpedienteView = {
   coordinador_id: string | null;
   status: string;
   data_json: string;
+  privacy_accepted_at: string | null;
+  privacy_accepted_version: string | null;
   created_at: string;
   updated_at: string;
   gates: Array<{ gate_code: string; status: string }>;
@@ -231,29 +233,56 @@ function validateData(data: ExpedienteData): void {
 
 export function updateExpedienteData(user: ScopeUser, id: string, data: ExpedienteData) {
   if (user.role !== "cliente") throw new Error("FORBIDDEN");
+  return saveExpedienteData(user, id, data, false);
+}
+
+function saveExpedienteData(user: ScopeUser, id: string, data: ExpedienteData, allowAfterG1: boolean) {
   const current = getExpediente(user, id);
   if (!current) throw new Error("NOT_FOUND");
   const gate = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(id) as { status: string } | undefined;
-  if (gate?.status === "cerrado") throw new Error("LOCKED");
+  if (!allowAfterG1 && gate?.status === "cerrado") throw new Error("LOCKED");
   validateData(data);
   const before = JSON.parse(current.data_json) as Record<string, unknown>;
   const changedFields = Object.keys(data).filter((key) => JSON.stringify(before[key]) !== JSON.stringify((data as Record<string, unknown>)[key]));
   const now = new Date().toISOString();
   getDatabase().prepare("UPDATE expedientes SET data_json = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(data), now, id);
-  if (JSON.stringify(before.central) !== JSON.stringify(data.central)) {
+  const materialFields = ["central", "servicio_actual", "solicitante"] as const;
+  const materialChanged = materialFields.some((field) => JSON.stringify(before[field]) !== JSON.stringify((data as Record<string, unknown>)[field]));
+  if (materialChanged) {
     const generated = getDatabase().prepare(`
       SELECT er.id, er.document_id FROM expediente_requirements er
       JOIN documents d ON d.id = er.document_id
       WHERE er.expediente_id = ? AND er.requirement_code = 'R01' AND d.source = 'generado'
     `).get(id) as { id: string; document_id: string } | undefined;
     if (generated) {
-      getDatabase().prepare("UPDATE expediente_requirements SET status = 'invalidado_por_cambio', updated_at = ? WHERE id = ?").run(now, generated.id);
+      getDatabase().prepare("UPDATE expediente_requirements SET status = 'requerido', document_id = NULL, version_id = NULL, updated_at = ? WHERE id = ?").run(now, generated.id);
       getDatabase().prepare("UPDATE documents SET status = 'invalidado_por_cambio', updated_at = ? WHERE id = ?").run(now, generated.document_id);
+      getDatabase().prepare("UPDATE document_versions SET change_reason = 'invalidado_por_cambio' WHERE document_id = ? AND change_reason IS NULL").run(generated.document_id);
+      getDatabase().prepare("UPDATE gates SET status = CASE WHEN gate_code = 'G2' THEN 'abierto' ELSE 'bloqueado' END, reopened_at = CASE WHEN gate_code = 'G2' THEN ? ELSE reopened_at END, reopen_reason = CASE WHEN gate_code = 'G2' THEN 'Cambio material posterior a la generación de F-01' ELSE reopen_reason END WHERE expediente_id = ? AND gate_code >= 'G2'").run(now, id);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "invalidacion_formato_por_cambio", entityType: "document", entityId: generated.document_id, expedienteId: id, metadata: { requirement_code: "R01", reason: "cambio_datos_materiales" } });
     }
   }
   auditEvent({ actorId: user.id, actorRole: user.role, eventType: "captura_datos", entityType: "expediente", entityId: id, expedienteId: id, metadata: { changed_fields: changedFields } });
   return getExpediente(user, id);
+}
+
+export function updateExpedienteDataByIdc(user: ScopeUser, id: string, data: ExpedienteData, reason: string) {
+  if (user.role !== "coordinador_idc") throw new Error("FORBIDDEN");
+  if (!reason?.trim()) throw new ValidationError("El motivo de corrección es obligatorio.");
+  const result = saveExpedienteData(user, id, data, true);
+  auditEvent({ actorId: user.id, actorRole: user.role, eventType: "correccion_datos_materiales", entityType: "expediente", entityId: id, expedienteId: id, metadata: { reason: reason.trim() } });
+  return result;
+}
+
+export function acceptPrivacy(user: ScopeUser, id: string, version: string) {
+  if (user.role !== "cliente") throw new Error("FORBIDDEN");
+  const expediente = getExpediente(user, id);
+  if (!expediente) throw new Error("NOT_FOUND");
+  if (!version?.trim()) throw new ValidationError("La versión del aviso es obligatoria.");
+  const now = new Date().toISOString();
+  getDatabase().prepare("UPDATE expedientes SET privacy_accepted_at = ?, privacy_accepted_version = ?, privacy_accepted_by = ?, updated_at = ? WHERE id = ?").run(now, version.trim(), user.id, now, id);
+  auditEvent({ actorId: user.id, actorRole: user.role, eventType: "aceptacion_aviso_privacidad", entityType: "expediente", entityId: id, expedienteId: id, metadata: { privacy_version: version.trim() } });
+  return { acceptedAt: now, version: version.trim() };
 }
 
 export function createExpediente(user: ScopeUser, input: ExpedienteInput) {

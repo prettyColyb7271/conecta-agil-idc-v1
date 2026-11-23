@@ -1,4 +1,7 @@
-# PASO 6 — Gates y formatos
+# PASO 6 — Gates y formatos (superseded)
+
+> Este reporte corresponde al intento inicial. La implementación corregida y el
+> reporte vigente están en [PASO_6-R.md](./PASO_6-R.md).
 
 ## 1. Alcance
 

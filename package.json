@@ -12,7 +12,9 @@
     "test:e2e:isolated": "node tests/e2e/isolated.mjs",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:seed": "tsx scripts/db-seed.ts",
-    "db:reset": "tsx scripts/db-reset.ts"
+    "db:reset": "tsx scripts/db-reset.ts",
+    "formats:grid": "tsx scripts/generate-f01-grid.ts",
+    "formats:samples": "tsx scripts/generate-format-samples.ts"
   },
   "dependencies": {
     "next": "^16.4.6",

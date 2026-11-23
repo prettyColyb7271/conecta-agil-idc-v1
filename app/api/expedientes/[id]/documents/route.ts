@@ -17,9 +17,10 @@ export async function POST(request: Request, { params }: Params) {
     if (!Number.isSafeInteger(Number(contentLength)) || Number(contentLength) > MAX_MULTIPART_BYTES) return Response.json({ error: "El cuerpo de carga excede el límite permitido." }, { status: 413 });
     const form = await request.formData();
     const requirementCode = String(form.get("requirementCode") ?? "");
+    const sourceVersionId = String(form.get("sourceVersionId") ?? "") || undefined;
     const file = form.get("file");
     if (!/^R\d{2}$/.test(requirementCode) || !(file instanceof File)) return Response.json({ error: "Requisito y archivo son requeridos." }, { status: 400 });
-    return Response.json({ document: await uploadDocument(user, id, requirementCode, file) }, { status: 201 });
+    return Response.json({ document: await uploadDocument(user, id, requirementCode, file, sourceVersionId) }, { status: 201 });
   } catch (error) {
     if (error instanceof Response) return error;
     if (error instanceof DocumentTooLargeError) return Response.json({ error: error.message }, { status: 413 });

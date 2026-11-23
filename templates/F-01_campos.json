@@ -1,0 +1,14 @@
+{
+  "tipo_persona": { "page": 0, "x": 116, "y": 694, "size": 8, "maxWidth": 90 },
+  "nombre_razon_social": { "page": 0, "x": 116, "y": 674, "size": 8, "maxWidth": 310 },
+  "rfc": { "page": 0, "x": 448, "y": 674, "size": 8, "maxWidth": 100 },
+  "domicilio": { "page": 0, "x": 116, "y": 654, "size": 8, "maxWidth": 310 },
+  "telefono": { "page": 0, "x": 116, "y": 634, "size": 8, "maxWidth": 150 },
+  "correo": { "page": 0, "x": 300, "y": 634, "size": 8, "maxWidth": 220 },
+  "rpu": { "page": 0, "x": 116, "y": 584, "size": 8, "maxWidth": 150 },
+  "tarifa": { "page": 0, "x": 300, "y": 584, "size": 8, "maxWidth": 100 },
+  "nivel_tension_suministro": { "page": 0, "x": 448, "y": 584, "size": 8, "maxWidth": 100 },
+  "tecnologia": { "page": 0, "x": 116, "y": 500, "size": 8, "maxWidth": 160 },
+  "capacidad_bruta_kw": { "page": 0, "x": 300, "y": 500, "size": 8, "maxWidth": 100 },
+  "utm": { "page": 0, "x": 116, "y": 460, "size": 8, "maxWidth": 310 }
+}
