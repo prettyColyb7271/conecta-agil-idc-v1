@@ -1,5 +1,14 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Conecta Ágil IDC
+
+El proyecto tiene dos modos:
+
+- `demo`: datos ficticios y adaptadores mock; es el modo usado en Vercel.
+- `local`: API local, SQLite y almacenamiento local; requiere Node 26.
+
+Configura `NEXT_PUBLIC_MODO=local` y, opcionalmente, `LOCAL_DATA_DIR` a una carpeta fuera de OneDrive. Si no se define, el modo local usa `%LOCALAPPDATA%\ConectaAgil` en Windows o `./local-data` en otros entornos. No se deben guardar documentos reales en el entorno de prueba.
+
 ## Getting Started
 
 First, run the development server:
