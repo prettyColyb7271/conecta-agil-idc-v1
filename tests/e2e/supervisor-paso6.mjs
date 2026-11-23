@@ -1,5 +1,8 @@
 const B = process.env.BASE ?? "http://localhost:3140";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const PizZip = require("pizzip");
 let pass = 0, fail = 0;
 const ok = (name, condition, extra = "") => {
   if (condition) { pass++; console.log("  ✅", name); }
@@ -55,6 +58,14 @@ if (expediente) {
   ok("cliente no puede generar formatos", clientFormat.status === 403);
   const invalidFormat = await gestor.request("POST", `/api/expedientes/${expediente.id}/formats`, { formatCode: "F-99" });
   ok("formato desconocido devuelve 400", invalidFormat.status === 400);
+  const zip = new PizZip(await fs.readFile(`${process.cwd()}/templates/F-02_carta_poder.docx`));
+  const xml = zip.file("word/document.xml").asText().replace("{{fecha}}", "{{marca.inexistente}}");
+  zip.file("word/document.xml", xml);
+  const form = new FormData();
+  form.set("code", "F-02");
+  form.set("file", new Blob([zip.generate({ type: "nodebuffer" })], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), "unknown.docx");
+  const unknown = await fetch(B + "/api/templates", { method: "POST", headers: { origin: B, cookie: gestor.cookie() }, body: form });
+  ok("plantilla con marca desconocida → 400", unknown.status === 400, `${unknown.status} ${await unknown.text()}`);
   let publicTemplate = true;
   try { await fs.stat(`${process.cwd()}/public/plantillas`); } catch { publicTemplate = false; }
   ok("plantilla F-01 no está publicada", !publicTemplate);

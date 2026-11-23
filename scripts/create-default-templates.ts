@@ -11,7 +11,8 @@ const templates: Record<string, string> = {
   "F-02_carta_poder.docx": body("F-02 Carta poder para interconexión", [p("Lugar y fecha: {{fecha}}"), p("Otorgante: {{cliente.nombre}} · RFC: {{cliente.rfc}}"), p("Apoderado: {{apoderado.nombre}} · Cargo: {{apoderado.cargo}}"), p("Objeto: {{tramite}}"), p("Firma otorgante: ____________________    Firma apoderado: ____________________")].join("")),
   "F-03_carta_poder_uiie.docx": body("F-03 Carta poder simple UIIE", [p("Lugar y fecha: {{fecha}}"), p("Cliente: {{cliente.nombre}}"), p("Apoderado: {{apoderado.nombre}}"), p("Trámite UIIE: {{tramite}}"), p("Firma: ______________________________")].join("")),
   "F-04_ficha.docx": body("F-04 Ficha de datos y responsables", [p("Titular: {{cliente.nombre}}"), p("RPU: {{rpu}} · Tarifa: {{tarifa}} · Tensión: {{tension}}"), p("Responsable: {{responsable.nombre}} · {{responsable.correo}}"), p("Enlace Empresarial CFE: {{enlace_cfe}}")].join("")),
-  "F-06_caratula.docx": body("F-06 Carátula e índice del expediente", [p("Folio: {{folio}} · Cliente: {{cliente.nombre}}"), p("Trámite: {{tramite}} · Fecha: {{fecha}}"), p("Requisitos: {{#requisitos}}{{code}} — {{status}}; {{/requisitos}}")].join("")),
+  "F-06_caratula.docx": body("F-06 Carátula e índice del expediente", [p("Folio: {{folio}} · Cliente: {{cliente.nombre}}"), p("Trámite: {{tramite}} · Fecha: {{fecha}}"), p("Requisitos: {{#lista}}{{code}} — {{status}}; {{/lista}}")].join("")),
+  "F-05_memoria_calculo.docx": body("F-05 Memoria de cálculo fotovoltaica", [p("Cliente: {{cliente.nombre}}"), p("Capacidad: {{capacidad_kw}} kW"), p("Anexo: {{#lista}}{{code}} {{/lista}}")].join("")),
 };
 for (const [filename, document] of Object.entries(templates)) {
   const zip = new PizZip();

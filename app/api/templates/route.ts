@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getAdapters } from "@/lib/adapters";
 import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
-import { DOCX_FORMATS, assertSafeDocx, listTemplates, templateHash, TemplateValidationError } from "@/lib/data/templates";
+import { TEMPLATE_CODES, assertSafeDocx, listTemplates, templateHash, TemplateValidationError } from "@/lib/data/templates";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -21,9 +21,9 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const code = String(form.get("code") ?? "");
     const file = form.get("file");
-    if (!DOCX_FORMATS.includes(code as never) || !(file instanceof File)) throw new TemplateValidationError("Código o archivo inválido.");
+    if (!TEMPLATE_CODES.includes(code as never) || !(file instanceof File)) throw new TemplateValidationError("Código o archivo inválido.");
     const bytes = Buffer.from(await file.arrayBuffer());
-    assertSafeDocx(bytes, file.name);
+    assertSafeDocx(bytes, file.name, code);
     const db = (await import("@/lib/db/sqlite")).getDatabase();
     const next = Number((db.prepare("SELECT COALESCE(MAX(version), 0) AS n FROM templates WHERE code = ?").get(code) as { n: number }).n) + 1;
     const id = crypto.randomUUID();
