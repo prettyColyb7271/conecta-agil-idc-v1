@@ -13,8 +13,7 @@ const LOCAL_MODE = process.env.NEXT_PUBLIC_MODO === "local";
 // DEMO: perfiles fijos para probar cada pantalla. Se reemplazará por Supabase en la Fase 2.
 const PERFILES: { role: Role; name: string; ruta: string }[] = [
   { role: "cliente", name: "Prudencio", ruta: "/portal" },
-  { role: "gestor_tramites_cfe", name: "Crecencio", ruta: "/gestor-cfe" },
-  { role: "coordinador_idc", name: "Olegario", ruta: "/gestor" },
+  { role: "coordinador_idc", name: "Gestor IDC", ruta: "/gestor" },
   { role: "admin_seguridad", name: "Administrador", ruta: "/admin" },
 ];
 

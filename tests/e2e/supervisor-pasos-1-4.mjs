@@ -59,10 +59,10 @@ console.log("== P4 alta de expediente");
 const list0 = (await coord.get("/api/expedientes")).json;
 const clientA = list0?.options?.clients?.find((c) => c.email === A.email);
 const clientB = list0?.options?.clients?.find((c) => c.email === Bc.email);
-const gestores = list0?.options?.gestors ?? [];
-ok("opciones: clientes A/B y ≥1 gestor", clientA && clientB && gestores.length >= 1, JSON.stringify(gestores.map((g) => g.email)));
-const g1 = gestores[0];
-const cA = await coord.post("/api/expedientes", { clienteId: clientA?.id, tramite: "interconexion_fv_mt", nivelTension: "MT", habilitado: true, gestorId: g1?.id });
+const responsables = list0?.options?.responsables ?? [];
+ok("opciones: clientes A/B y ≥1 Responsable IDC", clientA && clientB && responsables.length >= 1, JSON.stringify(responsables.map((g) => g.email)));
+const g1 = responsables[0];
+const cA = await coord.post("/api/expedientes", { clienteId: clientA?.id, tramite: "interconexion_fv_mt", nivelTension: "MT", habilitado: true, responsableId: g1?.id });
 const eA = cA.json?.expediente;
 ok("alta A → 201 con folio IDC-AAAA-NNNN", cA.status === 201 && /^IDC-\d{4}-\d{4}$/.test(eA?.folio ?? ""), cA.text.slice(0, 200));
 ok("alta A: 11 requisitos R, 8 gates, G0 abierto", eA?.requirements?.length === 11 && eA?.gates?.length === 8 && eA?.gates?.find((g) => g.gate_code === "G0")?.status === "abierto");
@@ -85,31 +85,31 @@ ok("A /portal muestra su folio sin error de render", portalA.text.includes(eA?.f
 const demoC = new S(); await demoC.login("cliente.demo@example.invalid");
 const portalDemo = await demoC.get("/portal");
 ok("cliente.demo /portal renderiza IDC-DEMO-0001 sin error", portalDemo.text.includes("IDC-DEMO-0001") && !/"digest"/.test(portalDemo.text));
-for (const [email, path] of [["gestor.demo@example.invalid", "/gestor-cfe"], ["coordinador.demo@example.invalid", "/gestor"], ["coordinador.demo@example.invalid", "/gestor/proyectos"], ["seguridad.demo@example.invalid", "/admin/usuarios"]]) {
+for (const [email, path] of [["coordinador.demo@example.invalid", "/gestor"], ["coordinador.demo@example.invalid", "/gestor/proyectos"], ["seguridad.demo@example.invalid", "/admin/usuarios"]]) {
   const s = new S(); await s.login(email); const r = await s.get(path);
   ok(`${path} (${email.split(".")[0]}) 200 sin error y < 1 MB`, r.status === 200 && !/"digest"/.test(r.text) && r.text.length < 1_000_000, `${r.status} len=${r.text.length}`);
 }
 ok("admin GET /api/expedientes → 403", (await admin.get("/api/expedientes")).status === 403);
 ok("admin GET /api/expedientes/:id → 403", (await admin.get(`/api/expedientes/${eA?.id}`)).status === 403);
 
-console.log("== P4 gestor y reasignación");
-const gestor1 = new S();
-const g1login = g1?.email === "gestor.demo@example.invalid" ? await gestor1.login(g1.email) : { status: 0 };
-ok("login gestor (semilla)", g1login.status === 200, `gestor[0]=${g1?.email}`);
-ok("gestor1 ve expediente A", (await gestor1.get(`/api/expedientes/${eA?.id}`)).status === 200);
-ok("gestor1 NO ve expediente B (sin asignar)", (await gestor1.get(`/api/expedientes/${eB?.id}`)).status === 404);
-ok("gestor1 no puede editar datos → 403", (await gestor1.patch(`/api/expedientes/${eA?.id}`, { data: validData() })).status === 403);
-ok("gestor1 no puede reasignar", ![200].includes((await gestor1.patch(`/api/expedientes/${eA?.id}`, { action: "assign", gestorId: g1?.id })).status));
-ok("asignar cliente como gestor → 400", (await coord.patch(`/api/expedientes/${eA?.id}`, { action: "assign", gestorId: clientA?.id })).status === 400);
-const g2 = gestores[1];
+console.log("== P4 Responsable IDC y reasignación");
+const responsable1 = new S(); const responsable2 = new S();
+ok("login Responsable IDC 1", (await responsable1.login(g1?.email)).status === 200);
+const g2 = responsables[1];
+ok("login Responsable IDC 2", !!g2 && (await responsable2.login(g2.email)).status === 200);
+ok("Responsable IDC 1 ve expediente A", (await responsable1.get(`/api/expedientes/${eA?.id}`)).status === 200);
+ok("Responsable IDC 2 ve expediente A por alcance IDC", !!g2 && (await responsable2.get(`/api/expedientes/${eA?.id}`)).status === 200);
+ok("Responsable IDC no puede editar datos", (await responsable1.patch(`/api/expedientes/${eA?.id}`, { data: validData() })).status === 403);
+ok("cliente no puede asignar Responsable IDC", (await A.s.patch(`/api/expedientes/${eA?.id}`, { action: "assign", responsableId: g1?.id })).status === 400);
+ok("asignar cliente como Responsable IDC → 400", (await coord.patch(`/api/expedientes/${eA?.id}`, { action: "assign", responsableId: clientA?.id })).status === 400);
 if (g2) {
-  const ra = await coord.patch(`/api/expedientes/${eA?.id}`, { action: "assign", gestorId: g2.id });
-  const hist = ra.json?.expediente?.assignments?.filter((a) => a.assignment_type === "gestor_tramites_cfe") ?? [];
-  ok("reasignación → historial con 2 gestores, anterior con ends_at", hist.length === 2 && hist.some((a) => a.ends_at) && hist.some((a) => !a.ends_at));
-  ok("gestor1 pierde acceso tras reasignación", (await gestor1.get(`/api/expedientes/${eA?.id}`)).status === 404);
-  const n1 = (await gestor1.get("/api/notifications")).json?.notifications ?? [];
-  ok("gestor1 recibe notificación de reasignación", n1.some((n) => n.expediente_id === eA?.id && n.type === "expediente_reasignado"));
-} else console.log("  ⚠️  solo hay 1 gestor activo: reasignación no probada");
+  const ra = await coord.patch(`/api/expedientes/${eA?.id}`, { action: "assign", responsableId: g2.id });
+  const hist = ra.json?.expediente?.assignments?.filter((a) => a.assignment_type === "coordinador_idc") ?? [];
+  ok("reasignación → historial IDC con 2 responsables, anterior con ends_at", hist.length === 2 && hist.some((a) => a.ends_at) && hist.some((a) => !a.ends_at));
+  ok("Responsable IDC anterior conserva acceso por alcance global", (await responsable1.get(`/api/expedientes/${eA?.id}`)).status === 200);
+  const n1 = (await responsable1.get("/api/notifications")).json?.notifications ?? [];
+  ok("Responsable IDC anterior recibe notificación", n1.some((n) => n.expediente_id === eA?.id && n.type === "expediente_reasignado"));
+}
 
 console.log("== P4 captura y validación");
 const up = await A.s.patch(`/api/expedientes/${eA?.id}`, { data: validData() });
@@ -139,7 +139,7 @@ console.log("== P3/P4 varios");
 const oc = await anon.get("/api/auth/clear?next=//evil.example/x");
 ok("/api/auth/clear no redirige a dominio externo", !(oc.loc ?? "").includes("evil.example"), oc.loc);
 const oc2 = await anon.get("/api/auth/clear?next=/%5Cevil.example/x");
-ok("/api/auth/clear rechaza ruta /\\ externa", oc2.loc === "http://localhost:3140/");
+ok("/api/auth/clear rechaza ruta /\\ externa", oc2.loc === `${B}/`);
 const blk = await admin.get("/api/admin/users"); const uA = blk.json?.users?.find((u) => u.email === A.email);
 await admin.post("/api/admin/users", { userId: uA?.id, action: "block" });
 ok("A bloqueado → API expedientes 401/403", [401, 403].includes((await A.s.get("/api/expedientes")).status));

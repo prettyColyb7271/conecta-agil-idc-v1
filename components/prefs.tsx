@@ -17,8 +17,8 @@ export const dict = {
     demoProfile: "Perfil de demostración",
     demoProfiles: {
       cliente: "Cliente (Prudencio)",
-      gestor_tramites_cfe: "Gestor CFE (IDC) (Crecencio)",
-      coordinador_idc: "Coordinador IDC (Olegario)",
+      gestor_tramites_cfe: "Rol histórico inactivo",
+      coordinador_idc: "Gestor IDC (Olegario)",
       admin_seguridad: "Administrador de seguridad",
     },
     registerTitle: "REGISTRO",
@@ -64,8 +64,8 @@ export const dict = {
     demoProfile: "Demo profile",
     demoProfiles: {
       cliente: "Client (Prudencio)",
-      gestor_tramites_cfe: "CFE manager (IDC) (Crecencio)",
-      coordinador_idc: "IDC coordinator (Olegario)",
+      gestor_tramites_cfe: "Inactive historical role",
+      coordinador_idc: "IDC manager (Olegario)",
       admin_seguridad: "Security administrator",
     },
     registerTitle: "SIGN UP",

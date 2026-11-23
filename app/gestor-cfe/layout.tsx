@@ -1,9 +1,5 @@
-import AppShell from "@/components/AppShell";
-import { requireRole } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
-export const instant = false;
-
-export default async function GestorCfeLayout({ children }: { children: React.ReactNode }) {
-  await requireRole("gestor_tramites_cfe");
-  return <AppShell role="gestor_tramites_cfe">{children}</AppShell>;
+export default function GestorCfeLayout() {
+  redirect("/gestor");
 }

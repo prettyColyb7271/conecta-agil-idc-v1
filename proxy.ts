@@ -5,7 +5,7 @@ const protectedPrefixes = ["/portal", "/gestor", "/gestor-cfe", "/admin"];
 const requiredRoles = [
   ["/portal", "cliente", "/portal"],
   ["/gestor", "coordinador_idc", "/gestor"],
-  ["/gestor-cfe", "gestor_tramites_cfe", "/gestor-cfe"],
+  ["/gestor-cfe", "coordinador_idc", "/gestor"],
   ["/admin", "admin_seguridad", "/admin"],
 ] as const;
 

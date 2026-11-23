@@ -19,7 +19,7 @@ export type ExpedienteInput = {
   tramite: string;
   nivelTension: "BT" | "MT";
   habilitado: boolean;
-  gestorId?: string;
+  responsableId?: string;
 };
 
 export type ExpedienteData = {
@@ -68,17 +68,14 @@ export type ExpedienteView = {
 
 function assertCanRead(user: ScopeUser): void {
   if (user.role === "admin_seguridad") throw new Error("FORBIDDEN");
-  if (!["cliente", "gestor_tramites_cfe", "coordinador_idc"].includes(user.role)) throw new Error("FORBIDDEN");
+  if (!["cliente", "coordinador_idc"].includes(user.role)) throw new Error("FORBIDDEN");
 }
 
 function visibleWhere(user: ScopeUser): { sql: string; params: string[] } {
   assertCanRead(user);
   if (user.role === "coordinador_idc") return { sql: "1 = 1", params: [] };
   if (user.role === "cliente") return { sql: "e.cliente_id = ?", params: [user.id] };
-  return {
-    sql: "EXISTS (SELECT 1 FROM expediente_assignments ea_scope WHERE ea_scope.expediente_id = e.id AND ea_scope.user_id = ? AND ea_scope.assignment_type = 'gestor_tramites_cfe' AND ea_scope.ends_at IS NULL)",
-    params: [user.id],
-  };
+  throw new Error("FORBIDDEN");
 }
 
 function rowsFor(user: ScopeUser, id?: string) {
@@ -125,9 +122,9 @@ export function listActiveClients(user: ScopeUser) {
   return getDatabase().prepare("SELECT id, display_name, email FROM users WHERE role = 'cliente' AND status = 'activo' ORDER BY display_name").all();
 }
 
-export function listActiveGestors(user: ScopeUser) {
+export function listActiveResponsables(user: ScopeUser) {
   if (user.role !== "coordinador_idc") throw new Error("FORBIDDEN");
-  return getDatabase().prepare("SELECT id, display_name, email FROM users WHERE role = 'gestor_tramites_cfe' AND status = 'activo' ORDER BY email").all();
+  return getDatabase().prepare("SELECT id, display_name, email FROM users WHERE role = 'coordinador_idc' AND status = 'activo' ORDER BY email").all();
 }
 
 const sectionFields: Record<string, readonly string[]> = {
@@ -205,21 +202,21 @@ export function createExpediente(user: ScopeUser, input: ExpedienteInput) {
   return withTransaction(() => {
     const client = database.prepare("SELECT id, display_name FROM users WHERE id = ? AND role = 'cliente' AND status = 'activo'").get(input.clienteId) as { id: string; display_name: string } | undefined;
     if (!client) throw new Error("CLIENT_NOT_FOUND");
-    if (input.gestorId) {
-      const gestor = database.prepare("SELECT id FROM users WHERE id = ? AND role = 'gestor_tramites_cfe' AND status = 'activo'").get(input.gestorId);
-      if (!gestor) throw new Error("GESTOR_NOT_FOUND");
+    if (input.responsableId) {
+      const responsable = database.prepare("SELECT id FROM users WHERE id = ? AND role = 'coordinador_idc' AND status = 'activo'").get(input.responsableId);
+      if (!responsable) throw new Error("RESPONSABLE_NOT_FOUND");
     }
     const year = new Date().getUTCFullYear();
     const last = database.prepare("SELECT COALESCE(MAX(CAST(substr(folio, 10) AS INTEGER)), 0) AS sequence FROM expedientes WHERE folio LIKE ?").get(`IDC-${year}-%`) as { sequence: number };
     const id = crypto.randomUUID();
     const folio = `IDC-${year}-${String(Number(last.sequence) + 1).padStart(4, "0")}`;
+    const responsibleId = input.responsableId ?? user.id;
     database.prepare(`
       INSERT INTO expedientes (id, folio, tramite, nivel_tension, habilitado, cliente_id, gestor_id, coordinador_id, status, data_json, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'borrador', '{}', ?, ?)
-    `).run(id, folio, input.tramite, input.nivelTension, input.habilitado ? 1 : 0, input.clienteId, input.gestorId ?? null, user.id, now, now);
+    `).run(id, folio, input.tramite, input.nivelTension, input.habilitado ? 1 : 0, input.clienteId, responsibleId, user.id, now, now);
     database.prepare("INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'cliente', ?, ?, ?)").run(crypto.randomUUID(), id, input.clienteId, user.id, now, now);
-    if (input.gestorId) database.prepare("INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'gestor_tramites_cfe', ?, ?, ?)").run(crypto.randomUUID(), id, input.gestorId, user.id, now, now);
-    database.prepare("INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'coordinador_idc', ?, ?, ?)").run(crypto.randomUUID(), id, user.id, user.id, now, now);
+    database.prepare("INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'coordinador_idc', ?, ?, ?)").run(crypto.randomUUID(), id, responsibleId, user.id, now, now);
     const requirements = database.prepare("SELECT code FROM requirement_catalog WHERE group_code = 'R' ORDER BY code").all() as Array<{ code: string }>;
     const insertRequirement = database.prepare("INSERT INTO expediente_requirements (id, expediente_id, requirement_code, status, updated_at) VALUES (?, ?, ?, 'requerido', ?)");
     for (const requirement of requirements) insertRequirement.run(crypto.randomUUID(), id, requirement.code, now);
@@ -227,27 +224,27 @@ export function createExpediente(user: ScopeUser, input: ExpedienteInput) {
     for (let index = 0; index <= 7; index += 1) insertGate.run(crypto.randomUUID(), id, `G${index}`, index === 0 ? "abierto" : "bloqueado", now);
     database.prepare("INSERT INTO notifications (id, user_id, expediente_id, type, priority, title, body, created_at) VALUES (?, ?, ?, 'expediente_creado', 'normal', ?, ?, ?)").run(crypto.randomUUID(), input.clienteId, id, "Expediente creado", `Tu expediente ${folio} fue creado por IDC.`, now);
     auditEvent({ actorId: user.id, actorRole: user.role, eventType: "alta_expediente", entityType: "expediente", entityId: id, expedienteId: id, metadata: { folio, cliente_id: input.clienteId, tramite: input.tramite, nivel_tension: input.nivelTension } });
-    if (input.gestorId) auditEvent({ actorId: user.id, actorRole: user.role, eventType: "asignacion_gestor", entityType: "expediente_assignment", entityId: id, expedienteId: id, metadata: { gestor_id: input.gestorId } });
+    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "asignacion_responsable_idc", entityType: "expediente_assignment", entityId: id, expedienteId: id, metadata: { responsable_id: responsibleId } });
     return getExpediente(user, id);
   });
 }
 
-export function assignGestor(user: ScopeUser, id: string, gestorId: string) {
+export function assignResponsable(user: ScopeUser, id: string, responsableId: string) {
   if (user.role !== "coordinador_idc") throw new Error("FORBIDDEN");
   const database = getDatabase();
   const now = new Date().toISOString();
   return withTransaction(() => {
     const expediente = database.prepare("SELECT id, folio, gestor_id FROM expedientes WHERE id = ?").get(id) as { id: string; folio: string; gestor_id: string | null } | undefined;
-    const gestor = database.prepare("SELECT id, display_name FROM users WHERE id = ? AND role = 'gestor_tramites_cfe' AND status = 'activo'").get(gestorId) as { id: string; display_name: string } | undefined;
+    const responsable = database.prepare("SELECT id, display_name FROM users WHERE id = ? AND role = 'coordinador_idc' AND status = 'activo'").get(responsableId) as { id: string; display_name: string } | undefined;
     if (!expediente) throw new Error("NOT_FOUND");
-    if (!gestor) throw new Error("GESTOR_NOT_FOUND");
-    if (expediente.gestor_id === gestorId) return getExpediente(user, id);
-    database.prepare("UPDATE expediente_assignments SET ends_at = ? WHERE expediente_id = ? AND assignment_type = 'gestor_tramites_cfe' AND ends_at IS NULL").run(now, id);
-    database.prepare("INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'gestor_tramites_cfe', ?, ?, ?)").run(crypto.randomUUID(), id, gestorId, user.id, now, now);
-    database.prepare("UPDATE expedientes SET gestor_id = ?, updated_at = ? WHERE id = ?").run(gestorId, now, id);
-    database.prepare("INSERT INTO notifications (id, user_id, expediente_id, type, priority, title, body, created_at) VALUES (?, ?, ?, 'expediente_asignado', 'normal', 'Nuevo expediente asignado', ?, ?)").run(crypto.randomUUID(), gestorId, id, `Se te asignó el expediente ${expediente.folio}.`, now);
-    if (expediente.gestor_id) database.prepare("INSERT INTO notifications (id, user_id, expediente_id, type, priority, title, body, created_at) VALUES (?, ?, ?, 'expediente_reasignado', 'normal', 'Expediente reasignado', ?, ?)").run(crypto.randomUUID(), expediente.gestor_id, id, `El expediente ${expediente.folio} fue reasignado.`, now);
-    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "reasignacion_gestor", entityType: "expediente_assignment", entityId: id, expedienteId: id, metadata: { gestor_anterior_id: expediente.gestor_id, gestor_nuevo_id: gestorId } });
+    if (!responsable) throw new Error("RESPONSABLE_NOT_FOUND");
+    if (expediente.gestor_id === responsableId) return getExpediente(user, id);
+    database.prepare("UPDATE expediente_assignments SET ends_at = ? WHERE expediente_id = ? AND assignment_type = 'coordinador_idc' AND ends_at IS NULL").run(now, id);
+    database.prepare("INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'coordinador_idc', ?, ?, ?)").run(crypto.randomUUID(), id, responsableId, user.id, now, now);
+    database.prepare("UPDATE expedientes SET gestor_id = ?, updated_at = ? WHERE id = ?").run(responsableId, now, id);
+    database.prepare("INSERT INTO notifications (id, user_id, expediente_id, type, priority, title, body, created_at) VALUES (?, ?, ?, 'expediente_asignado', 'normal', 'Nuevo responsable IDC', ?, ?)").run(crypto.randomUUID(), responsableId, id, `Se te asignó como responsable el expediente ${expediente.folio}.`, now);
+    if (expediente.gestor_id) database.prepare("INSERT INTO notifications (id, user_id, expediente_id, type, priority, title, body, created_at) VALUES (?, ?, ?, 'expediente_reasignado', 'normal', 'Responsable reasignado', ?, ?)").run(crypto.randomUUID(), expediente.gestor_id, id, `El expediente ${expediente.folio} fue reasignado.`, now);
+    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "reasignacion_responsable_idc", entityType: "expediente_assignment", entityId: id, expedienteId: id, metadata: { responsable_anterior_id: expediente.gestor_id, responsable_nuevo_id: responsableId } });
     return getExpediente(user, id);
   });
 }

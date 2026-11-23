@@ -36,9 +36,8 @@ const requirementCatalog = [
 
 const users = [
   ["cliente.demo@example.invalid", "Cliente Demo Ficticio", "cliente"],
-  ["gestor.demo@example.invalid", "Gestor CFE Demo Ficticio", "gestor_tramites_cfe"],
-  ["gestor2.demo@example.invalid", "Gestor CFE 2 Demo Ficticio", "gestor_tramites_cfe"],
-  ["coordinador.demo@example.invalid", "Coordinador Demo Ficticio", "coordinador_idc"],
+  ["coordinador.demo@example.invalid", "Gestor IDC Demo Ficticio", "coordinador_idc"],
+  ["idc2.demo@example.invalid", "Gestor IDC 2 Demo Ficticio", "coordinador_idc"],
   ["seguridad.demo@example.invalid", "Seguridad Demo Ficticio", "admin_seguridad"],
 ] as const;
 
@@ -63,7 +62,7 @@ export function seedDatabase(): { users: number; requirements: number; expedient
     const id = existing ? String(existing.id) : crypto.randomUUID();
     if (!existing) insertUser.run(id, email, displayName, role, hashPassword(TEST_PASSWORD), now, now);
     if (!userIds.has(role)) userIds.set(role, id);
-    if (email === "gestor2.demo@example.invalid") userIds.set("gestor_tramites_cfe_2", id);
+    if (email === "idc2.demo@example.invalid") userIds.set("coordinador_idc_2", id);
   }
 
   const catalogInsert = database.prepare(
@@ -80,9 +79,8 @@ export function seedDatabase(): { users: number; requirements: number; expedient
   }
 
   const clienteId = userIds.get("cliente");
-  const gestorId = userIds.get("gestor_tramites_cfe");
   const coordinadorId = userIds.get("coordinador_idc");
-  if (!clienteId || !gestorId || !coordinadorId) throw new Error("No se pudieron sembrar los usuarios de prueba.");
+  if (!clienteId || !coordinadorId) throw new Error("No se pudieron sembrar los usuarios de prueba.");
 
   const existingExpediente = database.prepare("SELECT id FROM expedientes WHERE folio = ?").get("IDC-DEMO-0001");
   const expedienteId = existingExpediente ? String(existingExpediente.id) : crypto.randomUUID();
@@ -94,7 +92,7 @@ export function seedDatabase(): { users: number; requirements: number; expedient
       "IDC-DEMO-0001",
       "Interconexión de central fotovoltaica en media tensión",
       clienteId,
-      gestorId,
+      coordinadorId,
       coordinadorId,
       JSON.stringify({
         ficticio: true,
@@ -108,11 +106,11 @@ export function seedDatabase(): { users: number; requirements: number; expedient
 
   const assignmentExists = database.prepare(
     "SELECT id FROM expediente_assignments WHERE expediente_id = ? AND user_id = ? AND assignment_type = ?",
-  ).get(expedienteId, gestorId, "gestor_tramites_cfe");
+  ).get(expedienteId, coordinadorId, "coordinador_idc");
   if (!assignmentExists) {
     database.prepare(
-      "INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'gestor_tramites_cfe', ?, ?, ?)",
-    ).run(crypto.randomUUID(), expedienteId, gestorId, coordinadorId, now, now);
+      "INSERT INTO expediente_assignments (id, expediente_id, user_id, assignment_type, assigned_by, starts_at, created_at) VALUES (?, ?, ?, 'coordinador_idc', ?, ?, ?)",
+    ).run(crypto.randomUUID(), expedienteId, coordinadorId, coordinadorId, now, now);
   }
 
   const requirementInsert = database.prepare(

@@ -7,8 +7,7 @@ import { useSession } from "@/lib/session";
 
 const GRUPOS: { rol: Role; titulo: string }[] = [
   { rol: "cliente", titulo: "Clientes" },
-  { rol: "coordinador_idc", titulo: "Coordinador IDC" },
-  { rol: "gestor_tramites_cfe", titulo: "Gestor CFE (IDC)" },
+  { rol: "coordinador_idc", titulo: "Gestor IDC" },
 ];
 const DOT = { pendiente: "riesgo", activo: "entiempo", bloqueado: "atrasado" } as const;
 const LABEL: Record<EstadoUsuario, string> = { pendiente: "Pendiente de revisión", activo: "Activo", bloqueado: "Bloqueado" };

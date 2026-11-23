@@ -19,7 +19,7 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
     { href: "/gestor/proyectos", label: "Proyectos" },
     { href: "/gestor/usuarios", label: "Usuarios" },
   ],
-  gestor_tramites_cfe: [{ href: "/gestor-cfe", label: "Inicio" }],
+  gestor_tramites_cfe: [],
   admin_seguridad: [
     { href: "/admin", label: "Inicio" },
     { href: "/admin/usuarios", label: "Cuentas" },

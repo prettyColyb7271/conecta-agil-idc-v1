@@ -24,7 +24,7 @@ export type AuthUser = {
 const roleHome: Record<Role, string> = {
   cliente: "/portal",
   coordinador_idc: "/gestor",
-  gestor_tramites_cfe: "/gestor-cfe",
+  gestor_tramites_cfe: "/gestor",
   admin_seguridad: "/admin",
 };
 
