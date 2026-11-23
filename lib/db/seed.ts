@@ -95,9 +95,9 @@ export function seedDatabase(): { users: number; requirements: number; expedient
       coordinadorId,
       coordinadorId,
       JSON.stringify({
-        ficticio: true,
-        solicitante: { tipo_persona: "moral", nombre_razon_social: "Empresa Solar Ficticia S.A. de C.V.", rfc: "XAXX010101000", telefono: "555-000-0000", domicilio: "Calle Ficticia 123" },
-        central: { tecnologia: "solar", capacidad_bruta_kw: 187.5, nivel_tension: "13 kV" },
+        solicitante: { tipo_persona: "moral", nombre_razon_social: "Empresa Solar Ficticia S.A. de C.V.", rfc: "XAXX010101000", telefono: "555-000-0000", domicilio: { calle: "Calle Ficticia", num_exterior: "123", municipio: "Hermosillo", estado: "Sonora" } },
+        servicio_actual: { rpu: "123456789012", nivel_tension_suministro: "MT", tarifa: "GDMTH" },
+        central: { tecnologia: "solar", capacidad_bruta_kw: 187.5 },
       }),
       now,
       now,

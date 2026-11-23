@@ -63,7 +63,7 @@ function draw(page: PDFPage, font: PDFFont, text: string, x: number, y: number, 
   page.drawText(fitted.text, { x, y, size, font, color: rgb(0.05, 0.1, 0.2) });
 }
 
-async function f01(data: Data, version: string, notices: string[]): Promise<Buffer> {
+async function f01(data: Data, version: string, folio: string, notices: string[]): Promise<Buffer> {
   const template = await fs.readFile(path.join(process.cwd(), "templates", "F-01_base.pdf"));
   const map = JSON.parse(await fs.readFile(path.join(process.cwd(), "templates", "F-01_campos.json"), "utf8")) as Record<string, { page: number; x: number; y: number; size: number; maxWidth: number }>;
   const pdf = await PDFDocument.load(template);
@@ -86,7 +86,8 @@ async function f01(data: Data, version: string, notices: string[]): Promise<Buff
   for (const [field, position] of Object.entries(map)) {
     draw(pdf.getPages()[position.page] ?? page, font, values[field] ?? "", position.x, position.y, position.size, position.maxWidth, notices, field);
   }
-  drawFooter(page, font, `Generado por Conecta Ágil · versión de datos ${version}`, notices);
+  const dataSha = crypto.createHash("sha256").update(JSON.stringify(data)).digest("hex").slice(0, 12);
+  drawFooter(page, font, `Folio ${folio} · versión de datos ${version} · sha256 ${dataSha} · Generado por Conecta Ágil`, notices);
   return Buffer.from(await pdf.save());
 }
 
@@ -164,7 +165,7 @@ function table(page: PDFPage, bold: PDFFont, font: PDFFont, rows: string[][], x:
 }
 
 async function createPdf(code: FormatCode, data: Data, version: string, expediente: { id: string; folio: string; tramite: string; cliente_nombre: string; created_at: string }, notices: string[]): Promise<Buffer> {
-  return code === "F-01" ? f01(data, version, notices) : generatedTemplate(code, data, expediente, notices);
+  return code === "F-01" ? f01(data, version, expediente.folio, notices) : generatedTemplate(code, data, expediente, notices);
 }
 
 export async function generateFormat(user: AuthUser, expedienteId: string, formatCode: string) {

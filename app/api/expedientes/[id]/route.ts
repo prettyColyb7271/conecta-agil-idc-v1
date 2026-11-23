@@ -1,5 +1,5 @@
 import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
-import { assignResponsable, getExpediente, updateExpedienteData, ValidationError, type ExpedienteData } from "@/lib/data/expedientes";
+import { assignResponsable, getExpediente, updateExpedienteData, updateExpedienteDataByIdc, ValidationError, type ExpedienteData } from "@/lib/data/expedientes";
 import { readJson, RequestInputError } from "@/lib/http";
 
 type Params = { params: Promise<{ id: string }> };
@@ -25,6 +25,9 @@ export async function PATCH(request: Request, { params }: Params) {
     const body = await readJson<{ action?: string; responsableId?: string; data?: ExpedienteData }>(request);
     if (body.action === "assign" && user.role === "coordinador_idc" && body.responsableId) {
       return Response.json({ expediente: assignResponsable(user, id, body.responsableId) });
+    }
+    if (body.data && user.role === "coordinador_idc" && typeof (body as { reason?: unknown }).reason === "string") {
+      return Response.json({ expediente: updateExpedienteDataByIdc(user, id, body.data, (body as { reason: string }).reason) });
     }
     if (body.data) {
       try {

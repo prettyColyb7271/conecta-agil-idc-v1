@@ -70,7 +70,9 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
     if (!catalog || !["Cliente", "Cliente/IDC", "IDC/Cliente"].includes(catalog.integra)) throw new Error("FORBIDDEN");
   } else if (!isIdc(user)) throw new Error("FORBIDDEN");
   const gate = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(expedienteId) as { status: string } | undefined;
-  if (gate?.status === "cerrado") throw new Error("LOCKED");
+  const isSignedScan = Boolean(sourceVersionId);
+  if (gate?.status === "cerrado" && !isSignedScan) throw new Error("LOCKED");
+  if (isSignedScan && !isIdc(user)) throw new Error("FORBIDDEN");
   const definition = allowedTypes.get(file.type);
   if (!definition) throw new DocumentValidationError("Solo se permiten archivos PDF, JPG o PNG.");
   if (file.size > MAX_FILE_BYTES) throw new DocumentTooLargeError("El archivo excede 20 MB.");

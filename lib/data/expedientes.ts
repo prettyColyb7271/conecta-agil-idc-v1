@@ -250,16 +250,17 @@ function saveExpedienteData(user: ScopeUser, id: string, data: ExpedienteData, a
   const materialChanged = materialFields.some((field) => JSON.stringify(before[field]) !== JSON.stringify((data as Record<string, unknown>)[field]));
   if (materialChanged) {
     const generated = getDatabase().prepare(`
-      SELECT er.id, er.document_id FROM expediente_requirements er
+      SELECT er.id, er.requirement_code, er.document_id
+      FROM expediente_requirements er
       JOIN documents d ON d.id = er.document_id
-      WHERE er.expediente_id = ? AND er.requirement_code = 'R01' AND d.source = 'generado'
-    `).get(id) as { id: string; document_id: string } | undefined;
-    if (generated) {
-      getDatabase().prepare("UPDATE expediente_requirements SET status = 'requerido', document_id = NULL, version_id = NULL, updated_at = ? WHERE id = ?").run(now, generated.id);
-      getDatabase().prepare("UPDATE documents SET status = 'invalidado_por_cambio', updated_at = ? WHERE id = ?").run(now, generated.document_id);
-      getDatabase().prepare("UPDATE document_versions SET change_reason = 'invalidado_por_cambio' WHERE document_id = ? AND change_reason IS NULL").run(generated.document_id);
+      WHERE er.expediente_id = ? AND er.requirement_code IN ('R01', 'R07') AND d.source = 'generado'
+    `).all(id) as Array<{ id: string; requirement_code: string; document_id: string }>;
+    for (const format of generated) {
+      getDatabase().prepare("UPDATE expediente_requirements SET status = 'requerido', document_id = NULL, version_id = NULL, updated_at = ? WHERE id = ?").run(now, format.id);
+      getDatabase().prepare("UPDATE documents SET status = 'invalidado_por_cambio', updated_at = ? WHERE id = ?").run(now, format.document_id);
+      getDatabase().prepare("UPDATE document_versions SET change_reason = 'invalidado_por_cambio' WHERE document_id = ? AND change_reason IS NULL").run(format.document_id);
       getDatabase().prepare("UPDATE gates SET status = CASE WHEN gate_code = 'G2' THEN 'abierto' ELSE 'bloqueado' END, reopened_at = CASE WHEN gate_code = 'G2' THEN ? ELSE reopened_at END, reopen_reason = CASE WHEN gate_code = 'G2' THEN 'Cambio material posterior a la generación de F-01' ELSE reopen_reason END WHERE expediente_id = ? AND gate_code >= 'G2'").run(now, id);
-      auditEvent({ actorId: user.id, actorRole: user.role, eventType: "invalidacion_formato_por_cambio", entityType: "document", entityId: generated.document_id, expedienteId: id, metadata: { requirement_code: "R01", reason: "cambio_datos_materiales" } });
+      auditEvent({ actorId: user.id, actorRole: user.role, eventType: "invalidacion_formato_por_cambio", entityType: "document", entityId: format.document_id, expedienteId: id, metadata: { requirement_code: format.requirement_code, reason: "cambio_datos_materiales" } });
     }
   }
   auditEvent({ actorId: user.id, actorRole: user.role, eventType: "captura_datos", entityType: "expediente", entityId: id, expedienteId: id, metadata: { changed_fields: changedFields } });

@@ -14,6 +14,7 @@ function runScript(script) {
 }
 
 try {
+  runScript("tests/e2e/migration-004-with-data.mjs");
   runScript("scripts/db-migrate.ts");
   runScript("scripts/db-seed.ts");
   server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", port], { cwd: root, env, stdio: "inherit" });
@@ -40,6 +41,9 @@ try {
   const gestores = spawn(process.execPath, ["tests/e2e/supervisor-gestores.mjs", root], { cwd: root, env, stdio: "inherit" });
   const gestoresCode = await new Promise((resolve) => gestores.on("exit", resolve));
   if (gestoresCode !== 0) process.exitCode = gestoresCode ?? 1;
+  const flujo = spawn(process.execPath, ["tests/e2e/supervisor-flujo-g0-g2.mjs", root], { cwd: root, env, stdio: "inherit" });
+  const flujoCode = await new Promise((resolve) => flujo.on("exit", resolve));
+  if (flujoCode !== 0) process.exitCode = flujoCode ?? 1;
 } finally {
   if (server && !server.killed) {
     server.kill();
