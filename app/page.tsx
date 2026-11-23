@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import AuthShell, { inputLgCls } from "@/components/AuthShell";
 import { usePrefs } from "@/components/prefs";
 import { setSession } from "@/lib/session";
 import type { Role } from "@/data/mock";
+
+const LOCAL_MODE = process.env.NEXT_PUBLIC_MODO === "local";
 
 // DEMO: perfiles fijos para probar cada pantalla. Se reemplazará por Supabase en la Fase 2.
 const PERFILES: { role: Role; name: string; ruta: string }[] = [
@@ -18,6 +21,7 @@ const PERFILES: { role: Role; name: string; ruta: string }[] = [
 export default function LoginPage() {
   const { t } = usePrefs();
   const router = useRouter();
+  const [error, setError] = useState("");
 
   return (
     <AuthShell logo="/logo_blanco.png">
@@ -25,7 +29,27 @@ export default function LoginPage() {
         className="flex w-full max-w-sm flex-col items-stretch gap-4 md:max-w-md"
         onSubmit={(e) => {
           e.preventDefault();
-          const clave = String(new FormData(e.currentTarget).get("perfil") ?? "");
+          const form = e.currentTarget;
+          const data = new FormData(form);
+          if (LOCAL_MODE) {
+            void (async () => {
+              const response = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ email: data.get("usuario"), password: data.get("password") }),
+              });
+              const result = await response.json() as { error?: string; role?: Role; name?: string };
+              if (!response.ok || !result.role || !result.name) {
+                setError(result.error ?? "No fue posible iniciar sesión.");
+                return;
+              }
+              setError("");
+              setSession({ name: result.name, role: result.role });
+              router.push(PERFILES.find((p) => p.role === result.role)?.ruta ?? "/");
+            })();
+            return;
+          }
+          const clave = String(data.get("perfil") ?? "");
           const perfil = PERFILES.find((p) => p.role === clave) ?? PERFILES[0];
           setSession({ name: perfil.name, role: perfil.role });
           router.push(perfil.ruta);
@@ -40,18 +64,21 @@ export default function LoginPage() {
           </svg>
         </div>
 
-        <p className="rounded-md bg-amber-100 px-3 py-2 text-center text-xs font-semibold text-amber-900">{t.demo}</p>
+        <p className="rounded-md bg-amber-100 px-3 py-2 text-center text-xs font-semibold text-amber-900">
+          {LOCAL_MODE ? "Modo local: usa tus credenciales aprobadas." : t.demo}
+        </p>
 
-        <label className="text-xs font-semibold">
+        {!LOCAL_MODE && <label className="text-xs font-semibold">
           {t.demoProfile}
           <select name="perfil" className={inputLgCls} defaultValue="cliente">
             {PERFILES.map((p) => (
               <option key={p.role} value={p.role}>{t.demoProfiles[p.role]}</option>
             ))}
           </select>
-        </label>
+        </label>}
         <input name="usuario" className={inputLgCls} placeholder={t.user} autoComplete="username" />
         <input name="password" className={inputLgCls} type="password" placeholder={t.password} autoComplete="current-password" />
+        {error && <p className="text-center text-sm font-bold text-red-600" role="alert">{error}</p>}
 
         <div className="grid grid-cols-2 gap-3">
           <Link
@@ -65,7 +92,7 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <p className="text-center text-xs">{t.demoHint}</p>
+        <p className="text-center text-xs">{LOCAL_MODE ? "La cuenta debe ser aprobada por el coordinador IDC." : t.demoHint}</p>
       </form>
     </AuthShell>
   );

@@ -4,34 +4,34 @@ import { getDatabase, migrateDatabase } from "./sqlite-runtime";
 const TEST_PASSWORD = "ConectaLocal-2026!";
 
 const requirementCatalog = [
-  ["R01", "R", "Formato de solicitud para interconexión", "ESPECIFICACION §4.1, línea 56"],
-  ["R02", "R", "Croquis", "ESPECIFICACION §4.1, línea 56"],
-  ["R03", "R", "Diagrama unifilar", "ESPECIFICACION §4.1, línea 56"],
-  ["R04", "R", "Fichas técnicas de paneles e inversor", "ESPECIFICACION §4.1, línea 56"],
-  ["R05", "R", "Certificados UL de paneles e inversor", "ESPECIFICACION §4.1, línea 56"],
-  ["R06", "R", "Identificación oficial vigente del propietario", "ESPECIFICACION §4.1, línea 56"],
-  ["R07", "R", "Carta poder con INE", "ESPECIFICACION §4.1, línea 56"],
-  ["R08", "R", "Constancia de situación fiscal", "ESPECIFICACION §4.1, línea 56"],
-  ["R09", "R", "Recibo del último corte", "ESPECIFICACION §4.1, línea 56"],
-  ["R10", "R", "Fotos del sistema funcionando", "ESPECIFICACION §4.1, línea 56"],
-  ["R11", "R", "Dictamen de verificación UVIE", "ESPECIFICACION §4.1, línea 56"],
-  ["U01", "U", "Resolutivo de CFE (y ficha y comprobante de aportación, si aplica)", "ESPECIFICACION §4.2, línea 76"],
-  ["U02", "U", "Dictamen de verificación UVIE", "ESPECIFICACION §4.2, línea 76"],
-  ["U03", "U", "RFC del cliente", "ESPECIFICACION §4.2, línea 76"],
-  ["U04", "U", "Documentos de quien contrata la UIIE (persona moral: acta, poder, INE del representante)", "ESPECIFICACION §4.2, línea 76"],
-  ["U05", "U", "Acta constitutiva o poder legal del servicio", "ESPECIFICACION §4.2, línea 76"],
-  ["U06", "U", "Identificación del representante legal", "ESPECIFICACION §4.2, línea 76"],
-  ["U07", "U", "Identificación de quien atiende la visita", "ESPECIFICACION §4.2, línea 76"],
-  ["U08", "U", "Identificación de dos testigos", "ESPECIFICACION §4.2, línea 76"],
-  ["U09", "U", "Memoria técnica (Acuerdo A/054/2024, cap. 9, secc. III, trigésima quinta)", "ESPECIFICACION §4.2, línea 76"],
-  ["U10", "U", "Diagrama unifilar (misma referencia, fracc. VII)", "ESPECIFICACION §4.2, línea 76"],
-  ["U11", "U", "Domicilio del servicio (recibo CFE)", "ESPECIFICACION §4.2, línea 76"],
-  ["U12", "U", "Responsable de recibir el certificado por parte del cliente (nombre, correo, teléfono)", "ESPECIFICACION §4.2, línea 76"],
-  ["U13", "U", "Responsable de recibir el certificado por parte de CFE (Enlace Empresarial)", "ESPECIFICACION §4.2, línea 76"],
-  ["U14", "U", "Fotografías de medidor y sellos de CFE", "ESPECIFICACION §4.2, línea 76"],
-  ["U15", "U", "Carta poder simple para la UIIE", "ESPECIFICACION §4.2, línea 76"],
-  ["U16", "U", "Carta poder para interconexión", "ESPECIFICACION §4.2, línea 76"],
-  ["U17", "U", "Datos generales del servicio (número, tarifa, titular)", "ESPECIFICACION §4.2, línea 76"],
+  ["R01", "R", "Formato de solicitud para interconexión", "ESPECIFICACION §4.1, línea 60", "generado", "IDC/Cliente", "F-01", "solicitante o representante legal", 0, null, null, "Secciones I–VII completas; RPU; capacidad en kW; coordenadas UTM; firma"],
+  ["R02", "R", "Croquis", "ESPECIFICACION §4.1, línea 60", "carga", "IDC", null, null, 0, null, null, "Legible; ubicación del inmueble y del sistema"],
+  ["R03", "R", "Diagrama unifilar", "ESPECIFICACION §4.1, línea 60", "carga", "IDC", null, "Ingeniero responsable [CONFIRMAR]", 0, null, null, "Versión; coincide con la memoria"],
+  ["R04", "R", "Fichas técnicas de paneles e inversor", "ESPECIFICACION §4.1, línea 60", "carga", "IDC", null, null, 0, null, null, "Modelo igual al de la memoria y la solicitud"],
+  ["R05", "R", "Certificados UL de paneles e inversor", "ESPECIFICACION §4.1, línea 60", "carga", "IDC", null, null, 0, null, null, "Vigencia; ¿se acepta CSA que avala normas UL? [CONFIRMAR]"],
+  ["R06", "R", "Identificación oficial vigente del propietario", "ESPECIFICACION §4.1, línea 60", "carga_sensible", "Cliente", null, null, 1, null, null, "Vigente; a nombre del titular"],
+  ["R07", "R", "Carta poder con INE", "ESPECIFICACION §4.1, línea 60", "generado", "Cliente", "F-02", "otorga, acepta y 2 testigos", 1, null, null, "Firmas completas; vigencia de las INE"],
+  ["R08", "R", "Constancia de situación fiscal", "ESPECIFICACION §4.1, línea 60", "carga_sensible", "Cliente", null, null, 1, null, null, "Actualizada; RFC igual al del titular"],
+  ["R09", "R", "Recibo del último corte", "ESPECIFICACION §4.1, línea 60", "carga", "Cliente", null, null, 0, null, null, "Último periodo; RPU igual al de la solicitud"],
+  ["R10", "R", "Fotos del sistema funcionando", "ESPECIFICACION §4.1, línea 60", "carga_multiple", "IDC", null, null, 0, null, null, "Módulos, inversor y tablero"],
+  ["R11", "R", "Dictamen de verificación UVIE", "ESPECIFICACION §4.1, línea 60", "externo", "IDC", null, "UVIE", 0, null, null, "Previo al ingreso; NOM-001-SEDE-2012"],
+  ["U01", "U", "Resolutivo de CFE (y ficha y comprobante de aportación, si aplica)", "ESPECIFICACION §4.2, línea 80", "externo", "Cliente/IDC", null, null, 0, "G4", null, "Oficio de G4"],
+  ["U02", "U", "Dictamen de verificación UVIE", "ESPECIFICACION §4.2, línea 80", "externo", "IDC", null, null, 0, "R11", null, "R11"],
+  ["U03", "U", "RFC del cliente", "ESPECIFICACION §4.2, línea 80", "carga", "Cliente", null, null, 1, "R08", null, "R08"],
+  ["U04", "U", "Documentos de quien contrata la UIIE (persona moral: acta, poder, INE del representante)", "ESPECIFICACION §4.2, línea 80", "carga", "Cliente", null, null, 1, null, "persona moral", "Condicional por tipo de persona"],
+  ["U05", "U", "Acta constitutiva o poder legal del servicio", "ESPECIFICACION §4.2, línea 80", "carga", "Cliente", null, null, 1, null, "persona moral", "Condicional"],
+  ["U06", "U", "Identificación del representante legal", "ESPECIFICACION §4.2, línea 80", "carga", "Cliente", null, null, 1, "R06", null, "R06 si es la misma persona"],
+  ["U07", "U", "Identificación de quien atiende la visita", "ESPECIFICACION §4.2, línea 80", "carga", "Cliente", null, null, 1, null, null, "Identificación vigente"],
+  ["U08", "U", "Identificación de dos testigos", "ESPECIFICACION §4.2, línea 80", "carga", "Cliente", null, null, 1, "R07", null, "Testigos de R07 si son los mismos"],
+  ["U09", "U", "Memoria técnica (Acuerdo A/054/2024, cap. 9, secc. III, trigésima quinta)", "ESPECIFICACION §4.2, línea 80", "generado", "IDC", "F-05", null, 0, null, null, "Memoria del expediente"],
+  ["U10", "U", "Diagrama unifilar (misma referencia, fracc. VII)", "ESPECIFICACION §4.2, línea 80", "carga", "IDC", null, null, 0, "R03", null, "R03"],
+  ["U11", "U", "Domicilio del servicio (recibo CFE)", "ESPECIFICACION §4.2, línea 80", "carga", "Cliente", null, null, 0, "R09", null, "R09"],
+  ["U12", "U", "Responsable de recibir el certificado por parte del cliente (nombre, correo, teléfono)", "ESPECIFICACION §4.2, línea 80", "dato_estructurado", "Cliente", "F-04", null, 0, null, null, "Nombre, correo y teléfono"],
+  ["U13", "U", "Responsable de recibir el certificado por parte de CFE (Enlace Empresarial)", "ESPECIFICACION §4.2, línea 80", "dato_estructurado", "Cliente/IDC", "F-04", null, 0, null, null, "Enlace Empresarial"],
+  ["U14", "U", "Fotografías de medidor y sellos de CFE", "ESPECIFICACION §4.2, línea 80", "carga_multiple", "IDC", null, null, 0, null, null, "Medidor y sellos de CFE"],
+  ["U15", "U", "Carta poder simple para la UIIE", "ESPECIFICACION §4.2, línea 80", "generado", "Cliente", "F-03", null, 1, null, null, "Firma del propietario o gestor con poder"],
+  ["U16", "U", "Carta poder para interconexión", "ESPECIFICACION §4.2, línea 80", "generado", "Cliente", "F-02", null, 1, "R07", null, "R07"],
+  ["U17", "U", "Datos generales del servicio (número, tarifa, titular)", "ESPECIFICACION §4.2, línea 80", "dato_estructurado", "Cliente", "F-04", null, 0, null, null, "Número, tarifa y titular"],
 ] as const;
 
 const users = [
@@ -65,10 +65,16 @@ export function seedDatabase(): { users: number; requirements: number; expedient
   }
 
   const catalogInsert = database.prepare(
-    "INSERT OR IGNORE INTO requirement_catalog (code, group_code, name, source_ref, required, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+    "INSERT OR IGNORE INTO requirement_catalog (code, group_code, name, source_ref, required, created_at, tipo, integra, formato_code, firma_fisica, sensible, reutiliza_code, condicional, validaciones) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
-  for (const [code, groupCode, name, sourceRef] of requirementCatalog) {
-    catalogInsert.run(code, groupCode, name, sourceRef, now);
+  for (const [code, groupCode, name, sourceRef, tipo, integra, formatoCode, firmaFisica, sensible, reutilizaCode, condicional, validaciones] of requirementCatalog) {
+    catalogInsert.run(code, groupCode, name, sourceRef, now, tipo, integra, formatoCode, firmaFisica, sensible, reutilizaCode, condicional, validaciones);
+  }
+  const catalogUpdate = database.prepare(
+    "UPDATE requirement_catalog SET tipo = ?, integra = ?, formato_code = ?, firma_fisica = ?, sensible = ?, reutiliza_code = ?, condicional = ?, validaciones = ? WHERE code = ?",
+  );
+  for (const [code, , , , tipo, integra, formatoCode, firmaFisica, sensible, reutilizaCode, condicional, validaciones] of requirementCatalog) {
+    catalogUpdate.run(tipo, integra, formatoCode, firmaFisica, sensible, reutilizaCode, condicional, validaciones, code);
   }
 
   const clienteId = userIds.get("cliente");

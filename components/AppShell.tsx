@@ -55,12 +55,13 @@ export default function AppShell({ role, children }: { role: Role; children: Rea
   const session = useSession();
   const now = useClock();
   const { dark } = usePrefs();
+  const localMode = process.env.NEXT_PUBLIC_MODO === "local";
 
   // Protección DEMO: sin sesión (o con otro rol) regresa al login
   useEffect(() => {
     if (session === undefined) return;
-    if (!session || session.role !== role) router.replace("/");
-  }, [session, role, router]);
+    if (!localMode && (!session || session.role !== role)) router.replace("/");
+  }, [localMode, session, role, router]);
 
   return (
     <div className="flex min-h-screen flex-col bg-[#dbe8f5]">
@@ -100,7 +101,13 @@ export default function AppShell({ role, children }: { role: Role; children: Rea
           </nav>
 
           <button
-            onClick={() => {
+            onClick={async () => {
+              if (localMode) {
+                await fetch("/api/auth/logout", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                });
+              }
               clearSession();
               router.push("/");
             }}

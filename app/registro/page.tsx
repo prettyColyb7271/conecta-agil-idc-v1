@@ -7,6 +7,7 @@ import { usePrefs } from "@/components/prefs";
 import { CORREO_SOLICITUDES } from "@/data/mock";
 
 const label = "mb-1 block text-center text-xs font-semibold";
+const LOCAL_MODE = process.env.NEXT_PUBLIC_MODO === "local";
 
 export default function RegistroPage() {
   const { t } = usePrefs();
@@ -20,9 +21,28 @@ export default function RegistroPage() {
       setError(t.mismatch);
       return;
     }
+    if (LOCAL_MODE) {
+      void (async () => {
+        const response = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            email: data.get("correo"),
+            password: data.get("password"),
+            displayName: `${data.get("nombres")} ${data.get("paterno")} ${data.get("materno")}`.trim(),
+          }),
+        });
+        const result = await response.json() as { error?: string };
+        if (!response.ok) {
+          setError(result.error ?? "No fue posible enviar la solicitud.");
+          return;
+        }
+        setError("");
+        setSent(true);
+      })();
+      return;
+    }
     setError("");
-    // Más adelante: guardar la solicitud en Supabase con estado "pendiente".
-    // El registro solo crea solicitudes de cliente; los roles internos los asigna el coordinador.
     setSent(true);
   }
 
@@ -50,7 +70,7 @@ export default function RegistroPage() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={label}>{t.password}:</label>
-            <input name="password" type="password" minLength={8} className={inputCls} placeholder={t.password} required />
+            <input name="password" type="password" minLength={LOCAL_MODE ? 10 : 8} className={inputCls} placeholder={t.password} required />
           </div>
           <div>
             <label className={label}>{t.confirm}:</label>

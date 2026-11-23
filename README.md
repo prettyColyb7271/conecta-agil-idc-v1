@@ -15,6 +15,8 @@ Después de ejecutar `npm run db:migrate` y `npm run db:seed`, los cuatro usuari
 
 Los scripts disponibles son `npm run db:reset` (requiere `CONFIRM=1`), `npm run db:migrate` y `npm run db:seed`.
 
+En modo local, el registro crea una solicitud de cliente pendiente. El coordinador la aprueba desde `/gestor/usuarios`; después el cliente puede iniciar sesión en `/`. Las rutas protegidas validan la cookie de sesión, el vencimiento, la revocación y el rol en el servidor. El administrador de seguridad gestiona cuentas desde `/admin/usuarios` sin consultar el contenido técnico de los expedientes.
+
 ## Getting Started
 
 First, run the development server:

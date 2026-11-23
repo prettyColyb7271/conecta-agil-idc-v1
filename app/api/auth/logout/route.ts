@@ -1,0 +1,19 @@
+import { NextResponse } from "next/server";
+import { getAppMode } from "@/lib/adapters/config";
+import { assertSameOrigin, auditEvent, revokeSessionByToken, SESSION_COOKIE } from "@/lib/auth";
+
+export async function POST(request: Request) {
+  if (getAppMode() !== "local") return NextResponse.json({ ok: true });
+  try {
+    assertSameOrigin(request);
+    const token = request.headers.get("cookie")?.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`))?.[1];
+    const userId = token ? revokeSessionByToken(token) : null;
+    if (userId) auditEvent({ actorId: userId, eventType: "logout", entityType: "session", metadata: { revoked: true } });
+    const response = NextResponse.json({ ok: true });
+    response.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
+    return response;
+  } catch (error) {
+    if (error instanceof Response) return error;
+    return NextResponse.json({ error: "No fue posible cerrar la sesión." }, { status: 500 });
+  }
+}
