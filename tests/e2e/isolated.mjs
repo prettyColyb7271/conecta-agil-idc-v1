@@ -34,6 +34,9 @@ try {
   const docs = spawn(process.execPath, ["tests/e2e/supervisor-documentos.mjs", root], { cwd: root, env, stdio: "inherit" });
   const docsCode = await new Promise((resolve) => docs.on("exit", resolve));
   if (docsCode !== 0) process.exitCode = docsCode ?? 1;
+  const paso6 = spawn(process.execPath, ["tests/e2e/supervisor-paso6.mjs"], { cwd: root, env: { ...env, BASE: base }, stdio: "inherit" });
+  const paso6Code = await new Promise((resolve) => paso6.on("exit", resolve));
+  if (paso6Code !== 0) process.exitCode = paso6Code ?? 1;
 } finally {
   if (server && !server.killed) {
     server.kill();

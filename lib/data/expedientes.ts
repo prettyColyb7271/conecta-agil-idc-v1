@@ -240,6 +240,18 @@ export function updateExpedienteData(user: ScopeUser, id: string, data: Expedien
   const changedFields = Object.keys(data).filter((key) => JSON.stringify(before[key]) !== JSON.stringify((data as Record<string, unknown>)[key]));
   const now = new Date().toISOString();
   getDatabase().prepare("UPDATE expedientes SET data_json = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(data), now, id);
+  if (JSON.stringify(before.central) !== JSON.stringify(data.central)) {
+    const generated = getDatabase().prepare(`
+      SELECT er.id, er.document_id FROM expediente_requirements er
+      JOIN documents d ON d.id = er.document_id
+      WHERE er.expediente_id = ? AND er.requirement_code = 'R01' AND d.source = 'generado'
+    `).get(id) as { id: string; document_id: string } | undefined;
+    if (generated) {
+      getDatabase().prepare("UPDATE expediente_requirements SET status = 'invalidado_por_cambio', updated_at = ? WHERE id = ?").run(now, generated.id);
+      getDatabase().prepare("UPDATE documents SET status = 'invalidado_por_cambio', updated_at = ? WHERE id = ?").run(now, generated.document_id);
+      auditEvent({ actorId: user.id, actorRole: user.role, eventType: "invalidacion_formato_por_cambio", entityType: "document", entityId: generated.document_id, expedienteId: id, metadata: { requirement_code: "R01", reason: "cambio_datos_materiales" } });
+    }
+  }
   auditEvent({ actorId: user.id, actorRole: user.role, eventType: "captura_datos", entityType: "expediente", entityId: id, expedienteId: id, metadata: { changed_fields: changedFields } });
   return getExpediente(user, id);
 }

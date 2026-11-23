@@ -148,9 +148,10 @@ export function reviewRequirement(user: AuthUser, expedienteId: string, requirem
   const database = getDatabase();
   const gate = database.prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(expedienteId) as { status: string } | undefined;
   if (gate?.status === "cerrado") throw new DocumentConflictError("La revisión está bloqueada porque G1 está cerrado.");
-  const requirement = database.prepare("SELECT id, status, version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?").get(expedienteId, requirementCode) as { id: string; status: string; version_id: string | null } | undefined;
+  const requirement = database.prepare("SELECT er.id, er.status, er.version_id, dv.author_id FROM expediente_requirements er LEFT JOIN document_versions dv ON dv.id = er.version_id WHERE er.expediente_id = ? AND er.requirement_code = ?").get(expedienteId, requirementCode) as { id: string; status: string; version_id: string | null; author_id: string | null } | undefined;
   if (!requirement) throw new Error("NOT_FOUND");
   if (action === "validate" && !requirement.version_id) throw new DocumentConflictError("No hay documento cargado para validar.");
+  if (action === "validate" && requirement.author_id === user.id) throw new DocumentConflictError("No puedes validar un documento que tú mismo subiste.");
   const internalNote = action === "observe" && visibility === "interno_idc";
   const status = internalNote ? requirement.status : action === "validate" ? "validado_idc" : action === "observe" ? "observado" : "no_aplica_justificado";
   const visibleReason = visibility === "cliente" ? reason : null;
