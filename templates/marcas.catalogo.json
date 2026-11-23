@@ -14,6 +14,7 @@
     {"marca":"plantilla.codigo","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"F-02"},
     {"marca":"plantilla.version","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"v1"},
     {"marca":"solicitante.tipo_persona","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"moral"},
+    {"marca":"cliente.tipo_persona","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"PERSONA FISICA"},
     {"marca":"solicitante.nombre_razon_social","tipo":"texto","obligatoria_en":["F-02","F-03","F-04"],"sensible":false,"ejemplo":"Empresa Solar Ficticia S.A. de C.V."},
     {"marca":"solicitante.rfc","tipo":"texto","obligatoria_en":["F-02"],"sensible":true,"ejemplo":"XAXX010101000"},
     {"marca":"solicitante.curp","tipo":"texto","obligatoria_en":[],"sensible":true,"ejemplo":"GODE800101HSONMN09"},
@@ -41,6 +42,7 @@
     {"marca":"cfe.enlace_nombre","tipo":"texto","obligatoria_en":["F-04"],"sensible":false,"ejemplo":"Enlace Empresarial Ficticio"},
     {"marca":"cfe.enlace_correo","tipo":"correo","obligatoria_en":[],"sensible":false,"ejemplo":"enlace.cfe@example.invalid"},
     {"marca":"cfe.enlace_telefono","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"555-000-0001"},
+    {"marca":"enlace_cfe_correo","tipo":"correo","obligatoria_en":["F-04"],"sensible":true,"ejemplo":"enlace.cfe@example.invalid"},
     {"marca":"gestor.nombre","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Gestor IDC Demo"},
     {"marca":"coordinador.nombre","tipo":"texto","obligatoria_en":[],"sensible":false,"ejemplo":"Gestor IDC Demo"},
     {"marca":"firma.lugar","tipo":"texto","obligatoria_en":["F-02","F-03"],"sensible":false,"ejemplo":"Hermosillo, Sonora"},
@@ -60,6 +62,7 @@
     {"marca":"memoria.inversor","tipo":"texto","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"Inversor Ficticio 250 kW"},
     {"marca":"memoria.relacion_dc_ac","tipo":"decimal_2","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"1.20"},
     {"marca":"memoria.strings","tipo":"lista","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"String A"},
+    {"marca":"ingeniero.nombre","tipo":"texto","obligatoria_en":["F-05"],"sensible":false,"ejemplo":"Ingeniero Ficticio"},
     {"marca":"documentos","tipo":"lista","obligatoria_en":["F-06"],"sensible":false,"ejemplo":"R01"}
   ],
   "ciclos": [
@@ -75,11 +78,11 @@
     "F-06":{"obligatorias":["expediente.folio","expediente.tramite","expediente.fecha"],"opcionales":[],"ciclos":["documentos"],"firmas":[]}
   },
   "formats": {
-    "F-02":{"template":"F-02_carta_poder.docx","marks":["fecha","cliente.nombre","cliente.rfc","apoderado.nombre","apoderado.cargo","tramite","otorgante.nombre","testigo1.nombre","testigo2.nombre","firma.lugar","firma.fecha_larga"],"required":["cliente.nombre","tramite"],"sensitive":["cliente.rfc"],"origins":{"cliente.nombre":"cliente","cliente.rfc":"cliente","apoderado.nombre":"cliente","tramite":"sistema"},"gates":["G1","G2"],"gaps":["Texto legal final pendiente de aprobación IDC"]},
-    "F-03":{"template":"F-03_carta_poder_uiie.docx","marks":["fecha","cliente.nombre","apoderado.nombre","tramite","otorgante.nombre","testigo1.nombre","testigo2.nombre","firma.lugar","firma.fecha_larga"],"required":["cliente.nombre","tramite"],"sensitive":[],"origins":{"cliente.nombre":"cliente","apoderado.nombre":"cliente","tramite":"sistema"},"gates":["G1"],"gaps":["Texto UIIE pendiente de captura y aprobación IDC"]},
-    "F-04":{"template":"F-04_ficha.docx","marks":["cliente.nombre","rpu","tarifa","tension","responsable.nombre","responsable.correo","enlace_cfe","servicio.titular","servicio.rpu","servicio.tarifa","central.tension","responsable_cliente.nombre"],"required":["cliente.nombre","rpu","tension"],"sensitive":["rpu"],"origins":{"cliente.nombre":"cliente","rpu":"cliente","tarifa":"cliente","tension":"cliente","responsable.nombre":"cliente","responsable.correo":"cliente","enlace_cfe":"IDC"},"gates":["G1"],"gaps":["U12/U13/U17 requieren confirmación de IDC"]},
-    "F-05":{"template":"F-05_memoria_calculo.docx","marks":["cliente.nombre","capacidad_kw","lista","central.capacidad_kw","memoria.consumo_kwh","memoria.potencia_requerida_kw","memoria.numero_modulos","memoria.produccion_kwh","memoria.inversor","memoria.relacion_dc_ac","memoria.strings"],"required":[],"sensitive":[],"origins":{"cliente.nombre":"cliente","capacidad_kw":"cliente","lista":"IDC"},"gates":["G1","G3"],"gaps":["Captura técnica de memoria queda pendiente fuera de 6c"]},
-    "F-06":{"template":"F-06_caratula.docx","marks":["folio","fecha","cliente.nombre","tramite","lista","expediente.folio","expediente.tramite","expediente.fecha","documentos"],"required":["folio","cliente.nombre","tramite"],"sensitive":[],"origins":{"folio":"sistema","fecha":"sistema","cliente.nombre":"cliente","tramite":"sistema","lista":"IDC"},"gates":["G1","G2"],"gaps":[]}
+    "F-02":{"template":"F-02_carta_poder.docx","marks":["cliente.nombre","cliente.tipo_persona","fecha","lugar","apoderado.nombre","testigo1.nombre","testigo2.nombre"],"required":["cliente.nombre","apoderado.nombre"],"sensitive":[],"origins":{"cliente.nombre":"cliente","cliente.tipo_persona":"cliente","apoderado.nombre":"cliente","lugar":"cliente","fecha":"sistema"},"gates":["G1","G2"],"gaps":["Texto legal final pendiente de aprobación IDC"]},
+    "F-03":{"template":"F-03_carta_poder_uiie.docx","marks":["cliente.nombre","cliente.tipo_persona","fecha","lugar","apoderado.nombre","testigo1.nombre","testigo2.nombre","rpu","servicio.domicilio"],"required":["cliente.nombre","apoderado.nombre"],"sensitive":["rpu","servicio.domicilio"],"origins":{"cliente.nombre":"cliente","cliente.tipo_persona":"cliente","apoderado.nombre":"cliente","rpu":"cliente","servicio.domicilio":"cliente","lugar":"cliente","fecha":"sistema"},"gates":["G1"],"gaps":["Texto UIIE pendiente de captura y aprobación IDC"]},
+    "F-04":{"template":"F-04_ficha.docx","marks":["cliente.nombre","fecha","gestor.nombre","responsable.nombre","responsable.correo","responsable.telefono","enlace_cfe","enlace_cfe_correo","rpu","tarifa","tension","tecnologia","capacidad_kw","servicio.domicilio"],"required":["cliente.nombre","rpu","tension"],"sensitive":["rpu","servicio.domicilio","enlace_cfe_correo"],"origins":{"cliente.nombre":"cliente","rpu":"cliente","tarifa":"cliente","tension":"cliente","responsable.nombre":"cliente","responsable.correo":"cliente","responsable.telefono":"cliente","enlace_cfe":"IDC","enlace_cfe_correo":"IDC"},"gates":["G1"],"gaps":["U12/U13/U17 requieren confirmación de IDC"]},
+    "F-05":{"template":"F-05_memoria_calculo.docx","marks":["cliente.nombre","capacidad_kw","folio","ingeniero.nombre","tramite"],"required":[],"sensitive":[],"origins":{"cliente.nombre":"cliente","capacidad_kw":"cliente","folio":"sistema","ingeniero.nombre":"cliente","tramite":"sistema"},"gates":["G1","G3"],"gaps":["Captura técnica de memoria queda pendiente fuera de 6c"]},
+    "F-06":{"template":"F-06_caratula.docx","marks":["folio","fecha","cliente.nombre","tramite","lista","capacidad_kw","gestor.nombre","id","estado","nombre","paginas","rpu","sha256_corto"],"required":["folio","cliente.nombre","tramite"],"sensitive":["rpu"],"origins":{"folio":"sistema","fecha":"sistema","cliente.nombre":"cliente","tramite":"sistema","lista":"IDC"},"gates":["G1","G2"],"gaps":[]}
   },
   "grupos": ["expediente","documento","plantilla","solicitante","representante","otorgante","apoderado","testigo1","testigo2","contacto","servicio","central","cfe","gestor","coordinador","firma","revision","responsable_cliente","responsable_cfe","memoria","documentos"]
 }

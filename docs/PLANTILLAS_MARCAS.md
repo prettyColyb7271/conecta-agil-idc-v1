@@ -11,6 +11,7 @@ con un máximo de dos niveles: `grupo.campo`. Las listas tienen nombre plural.
 |---|---|---|---|---|---|---|
 | `expediente.folio` | texto | IDC-2026-0001 | sistema | G1 | no | F-06 |
 | `solicitante.nombre_razon_social` | texto | Empresa Solar Ficticia S.A. de C.V. | cliente | G1 | no | F-02,F-03,F-04 |
+| `cliente.tipo_persona` | texto | PERSONA FISICA | cliente | G1 | no | F-02,F-03 |
 | `solicitante.rfc` | texto | XAXX010101000 | cliente | G1 | sí | F-02 |
 | `otorgante.nombre` | texto | Empresa Solar Ficticia S.A. de C.V. | cliente | G1 | no | F-02,F-03 |
 | `apoderado.nombre` | texto | Apoderado Ficticio | cliente | G1 | no | F-02,F-03 |
@@ -23,6 +24,8 @@ con un máximo de dos niveles: `grupo.campo`. Las listas tienen nombre plural.
 | `central.capacidad_kw` | decimal_2 | 187.50 | cliente | G1 | no | F-05 |
 | `responsable_cliente.nombre` | texto | UVIE Ficticio | cliente/IDC | G1 | no | F-04 |
 | `responsable_cfe.nombre` | texto | Enlace CFE Ficticio | CFE/IDC | G1 | no | F-04 |
+| `enlace_cfe_correo` | correo | enlace.cfe@example.invalid | CFE/IDC | G1 | sí | F-04 |
+| `ingeniero.nombre` | texto | Ingeniero Ficticio | cliente/IDC | G1 | no | F-05 |
 | `memoria.inversor` | texto | Inversor Ficticio 250 kW | cliente | G1 | no | F-05 |
 | `memoria.strings` | lista | String A | cliente | G1 | no | F-05 |
 | `documentos` | lista | R01, R02... | sistema | G1/G2 | no | F-06 |
@@ -32,18 +35,21 @@ origen, gate, marcas obligatorias, opcionales, ciclos y firmas.
 
 ## Marcas por formato
 
-- **F-02 — carta poder para interconexión:** lugar/fecha, otorgante,
-  apoderado, dos testigos, objeto del trámite y cuatro firmas. El texto legal
-  queda como `[TEXTO PENDIENTE DE APROBACIÓN IDC]`.
-- **F-03 — carta poder simple UIIE:** misma identificación de otorgante,
-  apoderado y testigos, con objeto UIIE y cuatro firmas.
-- **F-04 — ficha U12/U13/U17:** titular, RPU, tarifa, tensión, responsables
-  del cliente y CFE, con correo y teléfono.
-- **F-05 — memoria fotovoltaica:** consumo, potencia requerida, número de
-  módulos, producción, inversor, relación DC/AC y tabla de strings. La captura
-  técnica queda pendiente y fuera de 6c.
-- **F-06 — carátula e índice:** folio, cliente, trámite, fecha y ciclo de
-  documentos con código, estado, versión y SHA-256 corto.
+- **F-02 — carta poder para interconexión:** cliente, tipo de persona, lugar,
+  fecha, apoderado y dos testigos. Conserva la estructura de la carta original
+  del expediente y cuatro espacios de firma. El texto legal queda como
+  `[TEXTO PENDIENTE DE APROBACIÓN IDC]`.
+- **F-03 — carta poder simple UIIE:** cliente, tipo de persona, lugar, fecha,
+  RPU, domicilio del servicio, apoderado y dos testigos, con objeto UIIE y
+  cuatro firmas.
+- **F-04 — ficha U12/U13/U17:** cliente, fecha, gestor, responsable, correo,
+  teléfono, enlace CFE, correo del enlace, RPU, tarifa, tensión, tecnología,
+  capacidad y domicilio del servicio.
+- **F-05 — memoria fotovoltaica:** cliente, capacidad, folio, ingeniero
+  responsable y trámite. La captura técnica queda pendiente y fuera de 6c.
+- **F-06 — carátula e índice:** folio, fecha, cliente, trámite, capacidad,
+  gestor y ciclo de documentos con identificador, estado, nombre, páginas,
+  RPU y SHA-256 corto.
 
 ## Ciclos y configuración
 
@@ -100,26 +106,20 @@ como advertencias sin inventar datos.
 Convención: marcas en minúsculas, sin acentos, `snake_case`, máximo dos niveles;
 listas en plural; delimitadores `{{` y `}}`; faltante `______`.
 
-- **F-02:** carta poder de interconexión en una línea. Firmantes: otorgante,
-  apoderado, testigo1, testigo2. Marcas exactas: `otorgante.nombre`,
-  `otorgante.identificacion`, `apoderado.nombre`, `apoderado.cargo`,
-  `apoderado.identificacion`, `testigo1.nombre`, `testigo1.identificacion`,
-  `testigo2.nombre`, `testigo2.identificacion`, `firma.lugar`,
-  `firma.fecha_larga`, `cfe.area_destinataria`, `expediente.tramite`.
-- **F-03:** carta poder simple UIIE. Firmantes: otorgante, apoderado, testigo1,
-  testigo2. Usa las mismas marcas de firmantes y el objeto UIIE.
-- **F-04:** ficha U12/U13/U17 del servicio y responsables. Marcas exactas:
-  `servicio.titular`, `servicio.rpu`, `servicio.tarifa`, `central.tension`,
-  `responsable_cliente.nombre`, `responsable_cliente.correo`,
-  `responsable_cliente.telefono`, `responsable_cfe.nombre`,
-  `responsable_cfe.correo`, `responsable_cfe.telefono`.
-- **F-05:** memoria FV. Marcas exactas:
-  `memoria.consumo_kwh`, `memoria.potencia_requerida_kw`,
-  `memoria.numero_modulos`, `memoria.produccion_kwh`, `memoria.inversor`,
-  `memoria.relacion_dc_ac`, `memoria.strings`, `central.capacidad_kw`.
-- **F-06:** carátula e índice. Marcas exactas:
-  `expediente.folio`, `expediente.tramite`, `expediente.fecha` y ciclo
-  `{{#documentos}}{{documento.codigo}}{{documento.estado}}{{documento.version}}{{documento.sha256_corto}}{{/documentos}}`.
+- **F-02:** `cliente.nombre`, `cliente.tipo_persona`, `fecha`, `lugar`,
+  `apoderado.nombre`, `testigo1.nombre`, `testigo2.nombre`.
+- **F-03:** `cliente.nombre`, `cliente.tipo_persona`, `fecha`, `lugar`,
+  `apoderado.nombre`, `testigo1.nombre`, `testigo2.nombre`, `rpu`,
+  `servicio.domicilio`.
+- **F-04:** `cliente.nombre`, `fecha`, `gestor.nombre`, `responsable.nombre`,
+  `responsable.correo`, `responsable.telefono`, `enlace_cfe`,
+  `enlace_cfe_correo`, `rpu`, `tarifa`, `tension`, `tecnologia`,
+  `capacidad_kw`, `servicio.domicilio`.
+- **F-05:** `cliente.nombre`, `capacidad_kw`, `folio`, `ingeniero.nombre`,
+  `tramite`.
+- **F-06:** `folio`, `fecha`, `cliente.nombre`, `tramite`, `capacidad_kw`,
+  `gestor.nombre`, `id`, `estado`, `nombre`, `paginas`, `rpu`,
+  `sha256_corto` y el ciclo `{{#lista}}...{{/lista}}`.
 
 Reglas Word: marca de corrido, no cambiar formato a media marca, guardar como
 `.docx`, sin macros. [OBSERVADO EN ARCHIVO] se refiere a rutas existentes;

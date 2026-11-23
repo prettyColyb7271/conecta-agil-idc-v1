@@ -1,0 +1,174 @@
+{
+ "F-02_carta_poder.docx": {
+  "marcas": 9,
+  "rotas": [],
+  "llaves_sueltas": [],
+  "color_incorrecto": [],
+  "fuentes": [
+   "Arial"
+  ],
+  "macros": [],
+  "ciclos": [
+   0,
+   0
+  ],
+  "nuevas_vs_v1": [
+   "{{cliente.tipo_persona}}"
+  ],
+  "quitadas_vs_v1": [
+   "{{apoderado.cargo}}",
+   "{{apoderado.identificacion}}",
+   "{{capacidad_kw}}",
+   "{{cliente.identificacion}}",
+   "{{cliente.rfc}}",
+   "{{rpu}}",
+   "{{servicio.domicilio}}",
+   "{{tecnologia}}",
+   "{{testigo1.identificacion}}",
+   "{{testigo2.identificacion}}",
+   "{{tramite}}"
+  ],
+  "todas": [
+   "{{apoderado.nombre}}",
+   "{{cliente.nombre}}",
+   "{{cliente.tipo_persona}}",
+   "{{fecha}}",
+   "{{folio}}",
+   "{{lugar}}",
+   "{{testigo1.nombre}}",
+   "{{testigo2.nombre}}",
+   "{{version}}"
+  ]
+ },
+ "F-03_carta_poder_uiie.docx": {
+  "marcas": 11,
+  "rotas": [],
+  "llaves_sueltas": [],
+  "color_incorrecto": [],
+  "fuentes": [
+   "Arial"
+  ],
+  "macros": [],
+  "ciclos": [
+   0,
+   0
+  ],
+  "nuevas_vs_v1": [
+   "{{cliente.tipo_persona}}"
+  ],
+  "quitadas_vs_v1": [
+   "{{apoderado.identificacion}}",
+   "{{cliente.identificacion}}",
+   "{{testigo1.identificacion}}",
+   "{{testigo2.identificacion}}"
+  ],
+  "todas": [
+   "{{apoderado.nombre}}",
+   "{{cliente.nombre}}",
+   "{{cliente.tipo_persona}}",
+   "{{fecha}}",
+   "{{folio}}",
+   "{{lugar}}",
+   "{{rpu}}",
+   "{{servicio.domicilio}}",
+   "{{testigo1.nombre}}",
+   "{{testigo2.nombre}}",
+   "{{version}}"
+  ]
+ },
+ "F-04_ficha.docx": {
+  "marcas": 16,
+  "rotas": [],
+  "llaves_sueltas": [],
+  "color_incorrecto": [],
+  "fuentes": [
+   "Arial"
+  ],
+  "macros": [],
+  "ciclos": [
+   0,
+   0
+  ],
+  "nuevas_vs_v1": [
+   "{{enlace_cfe_correo}}"
+  ],
+  "quitadas_vs_v1": [],
+  "todas": [
+   "{{capacidad_kw}}",
+   "{{cliente.nombre}}",
+   "{{enlace_cfe_correo}}",
+   "{{enlace_cfe}}",
+   "{{fecha}}",
+   "{{folio}}",
+   "{{gestor.nombre}}",
+   "{{responsable.correo}}",
+   "{{responsable.nombre}}",
+   "{{responsable.telefono}}",
+   "{{rpu}}",
+   "{{servicio.domicilio}}",
+   "{{tarifa}}",
+   "{{tecnologia}}",
+   "{{tension}}",
+   "{{version}}"
+  ]
+ },
+ "F-05_memoria_calculo.docx": {
+  "marcas": 6,
+  "rotas": [],
+  "llaves_sueltas": [],
+  "color_incorrecto": [],
+  "fuentes": [
+   "Arial"
+  ],
+  "macros": [],
+  "ciclos": [
+   0,
+   0
+  ],
+  "nuevas_vs_v1": [
+   "{{ingeniero.nombre}}"
+  ],
+  "quitadas_vs_v1": [],
+  "todas": [
+   "{{capacidad_kw}}",
+   "{{cliente.nombre}}",
+   "{{folio}}",
+   "{{ingeniero.nombre}}",
+   "{{tramite}}",
+   "{{version}}"
+  ]
+ },
+ "F-06_caratula.docx": {
+  "marcas": 15,
+  "rotas": [],
+  "llaves_sueltas": [],
+  "color_incorrecto": [],
+  "fuentes": [
+   "Arial"
+  ],
+  "macros": [],
+  "ciclos": [
+   1,
+   1
+  ],
+  "nuevas_vs_v1": [],
+  "quitadas_vs_v1": [],
+  "todas": [
+   "{{#lista}}",
+   "{{/lista}}",
+   "{{capacidad_kw}}",
+   "{{cliente.nombre}}",
+   "{{estado}}",
+   "{{fecha}}",
+   "{{folio}}",
+   "{{gestor.nombre}}",
+   "{{id}}",
+   "{{nombre}}",
+   "{{paginas}}",
+   "{{rpu}}",
+   "{{sha256_corto}}",
+   "{{tramite}}",
+   "{{version}}"
+  ]
+ }
+}
