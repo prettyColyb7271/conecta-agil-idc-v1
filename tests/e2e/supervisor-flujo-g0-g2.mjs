@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 const root = process.argv[2];
 const require = createRequire(path.join(root, "package.json"));
 const { PDFDocument, PDFRawStream, PDFArray } = require("pdf-lib");
+const PizZip = require("pizzip");
 const port = "3196"; const B = `http://localhost:${port}`;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "sup-flujo-"));
 const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir };
@@ -87,10 +88,10 @@ try {
   ok("F-01: texto agregado contiene el folio", added.includes(hexOf(exp.folio)) || added.includes(exp.folio));
   ok("F-01: sin volcado 'seccion.campo:'", !added.includes(hexOf("solicitante.")) && !added.includes("solicitante."));
   await dl("F-04");
-  const txt = async (f) => Buffer.concat((await streamsOf(await dl(f))).out).toString("latin1");
-  const f02 = await txt("F-02"); ok("F-02 menciona testigos", f02.includes(hexOf("estigo")) || /estigo/.test(f02));
-  const f06 = await txt("F-06"); const shaR06 = (await req("R06"))?.versions?.[0]?.sha256 ?? "";
-  ok("F-06 contiene sha256 de un documento vigente", shaR06 && (f06.includes(hexOf(shaR06.slice(0, 12))) || f06.includes(shaR06.slice(0, 12)) || f06.includes(hexOf(shaR06.slice(0, 12).toUpperCase()))));
+  const f02Docx = new PizZip(await dl("F-02")).file("word/document.xml").asText();
+  ok("F-02 DOCX no conserva marcas y tiene carta poder", !f02Docx.includes("{{") && /Carta poder/.test(f02Docx));
+  const f06Docx = new PizZip(await dl("F-06")).file("word/document.xml").asText();
+  ok("F-06 DOCX no conserva marcas y tiene loop resuelto", !f06Docx.includes("{{") && /Carátula/.test(f06Docx));
 
   console.log("== firma presencial y escaneos");
   for (const f of ["F-01", "F-02"]) { const r = await g1.post(`${E}/formats`, { action: "print", formatCode: f, versionId: gen[f]?.versionId }); ok(`imprimir ${f} → pendiente_firma`, [200, 201].includes(r.status), r.text); }

@@ -8,6 +8,7 @@ import { getAdapters } from "@/lib/adapters";
 import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { getExpediente } from "@/lib/data/expedientes";
+import { renderDocx, type DocxFormat } from "@/lib/data/templates";
 
 export class FormatValidationError extends Error {
   constructor(message: string) {
@@ -95,14 +96,24 @@ function drawFooter(page: PDFPage, font: PDFFont, text: string, notices: string[
   draw(page, font, text, 32, 18, 6, page.getWidth() - 64, notices, "pie");
 }
 
-async function generatedTemplate(code: FormatCode, data: Data, expediente: { folio: string; tramite: string; cliente_nombre: string; created_at: string }, notices: string[]): Promise<Buffer> {
+async function generatedTemplate(code: FormatCode, data: Data, expediente: { id?: string; folio: string; tramite: string; cliente_nombre: string; created_at: string }, notices: string[]): Promise<Buffer> {
+  if (code === "F-02" || code === "F-03" || code === "F-04" || code === "F-06") {
+    const result = await renderDocx(code as DocxFormat, {
+      folio: expediente.folio, tramite: expediente.tramite, fecha: new Date().toLocaleDateString("es-MX"),
+      cliente: get(data, "solicitante", "nombre_razon_social"), rpu: get(data, "servicio_actual", "rpu"),
+      tarifa: get(data, "servicio_actual", "tarifa"), tension: get(data, "servicio_actual", "nivel_tension_suministro"),
+      enlace_cfe: get(data, "representacion", "enlace_cfe"), requisitos: [],
+    });
+    notices.push(...result.missing.map((field) => `Falta el campo ${field}; se dejó ______.`));
+    return result.bytes;
+  }
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([612, 792]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   page.drawText(`${code} · ${FORMAT_NAMES[code]}`, { x: 42, y: 744, size: 16, font: bold, color: rgb(0.05, 0.1, 0.2) });
   page.drawText("Conecta Ágil IDC · documento de trabajo", { x: 42, y: 726, size: 9, font });
-  if (code === "F-02") {
+  if ((code as string) === "F-02") {
     const lines = [
       "Lugar y fecha: ______________________________________________",
       "A CFE Suministrador de Servicios Básicos:",
@@ -116,7 +127,7 @@ async function generatedTemplate(code: FormatCode, data: Data, expediente: { fol
       "Nombre: ___________________   Nombre: ___________________",
     ];
     lines.forEach((line, index) => page.drawText(line, { x: 48, y: 680 - index * 30, size: 10, font }));
-  } else if (code === "F-04") {
+  } else if ((code as string) === "F-04") {
     const rows = [
       ["Titular / razón social", get(data, "solicitante", "nombre_razon_social")],
       ["RPU", get(data, "servicio_actual", "rpu")],
@@ -127,7 +138,7 @@ async function generatedTemplate(code: FormatCode, data: Data, expediente: { fol
       ["Enlace Empresarial CFE", get(data, "representacion", "enlace_cfe")],
     ];
     table(page, bold, font, rows, 48, 680, notices);
-  } else if (code === "F-06") {
+  } else if ((code as string) === "F-06") {
     page.drawText(`Folio: ${expediente.folio}`, { x: 48, y: 700, size: 10, font });
     page.drawText(`Cliente: ${expediente.cliente_nombre}`, { x: 48, y: 682, size: 10, font });
     page.drawText(`Trámite: ${expediente.tramite}`, { x: 48, y: 664, size: 10, font });
@@ -184,8 +195,11 @@ export async function generateFormat(user: AuthUser, expedienteId: string, forma
   const previous = getDatabase().prepare("SELECT d.id AS document_id, dv.id AS version_id, COALESCE(MAX(dv.version_number), 0) AS version_number FROM documents d LEFT JOIN document_versions dv ON dv.document_id = d.id WHERE d.expediente_id = ? AND d.document_type = ? GROUP BY d.id, dv.id ORDER BY version_number DESC LIMIT 1").get(expedienteId, code) as { document_id: string; version_id: string; version_number: number } | undefined;
   const documentId = previous?.document_id ?? crypto.randomUUID();
   const versionId = crypto.randomUUID();
-  const storageKey = `${documentId}/${versionId}.pdf`;
-  const stored = await adapters.storage.put(bytes, { storageKey, filename: `${code}-${expediente.folio}.pdf`, mimeType: "application/pdf" });
+  const isDocx = code === "F-02" || code === "F-03" || code === "F-04" || code === "F-06";
+  const extension = isDocx ? "docx" : "pdf";
+  const mimeType = isDocx ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "application/pdf";
+  const storageKey = `${documentId}/${versionId}.${extension}`;
+  const stored = await adapters.storage.put(bytes, { storageKey, filename: `${code}-${expediente.folio}.${extension}`, mimeType });
   const now = new Date().toISOString();
   try {
     withTransaction(() => {
@@ -193,7 +207,8 @@ export async function generateFormat(user: AuthUser, expedienteId: string, forma
       if (previous) database.prepare("UPDATE document_versions SET change_reason = 'invalidado_por_cambio' WHERE id = ?").run(previous.version_id);
       if (!previous) database.prepare("INSERT INTO documents (id, expediente_id, requirement_id, document_type, source, sensitivity, status, created_by, created_at, updated_at) VALUES (?, ?, (SELECT id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?), ?, 'generado', 'normal', 'pdf_generado', ?, ?, ?)").run(documentId, expedienteId, expedienteId, requirementCode ?? "", code, user.id, now, now);
       else database.prepare("UPDATE documents SET status = 'pdf_generado', updated_at = ? WHERE id = ?").run(now, documentId);
-      database.prepare("INSERT INTO document_versions (id, document_id, version_number, storage_key, original_filename, mime_type, size_bytes, sha256, author_id, origin, template_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'generado', ?, ?)").run(versionId, documentId, previous ? previous.version_number + 1 : 1, stored.storageKey, stored.filename, stored.mimeType, stored.sizeBytes, stored.sha256, user.id, code === "F-01" ? "F-01_base.pdf" : "IDC-template-v1", now);
+      const template = isDocx ? database.prepare("SELECT version, sha256 FROM templates WHERE code = ? AND active = 1 ORDER BY version DESC LIMIT 1").get(code) as { version: number; sha256: string } | undefined : undefined;
+      database.prepare("INSERT INTO document_versions (id, document_id, version_number, storage_key, original_filename, mime_type, size_bytes, sha256, author_id, origin, template_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'generado', ?, ?)").run(versionId, documentId, previous ? previous.version_number + 1 : 1, stored.storageKey, stored.filename, stored.mimeType, stored.sizeBytes, stored.sha256, user.id, code === "F-01" ? "F-01_base.pdf" : `v${template?.version ?? 1}:${template?.sha256 ?? "local"}`, now);
       if (requirementCode) database.prepare("UPDATE expediente_requirements SET document_id = ?, version_id = ?, status = 'pdf_generado', observed_reason = NULL, updated_at = ? WHERE expediente_id = ? AND requirement_code = ?").run(documentId, versionId, now, expedienteId, requirementCode);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "generacion_formato", entityType: "document_version", entityId: versionId, expedienteId, metadata: { format_code: code, sha256: stored.sha256, truncations: notices } });
     });

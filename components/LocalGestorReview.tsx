@@ -22,6 +22,7 @@ export default function LocalGestorReview() {
   const [scope, setScope] = useState<"mine" | "all">("all");
   const [pending, setPending] = useState<Pending[]>([]);
   const [gates, setGates] = useState<Gate[]>([]);
+  const [templates, setTemplates] = useState<Array<{ id: string; code: string; version: number; sha256: string; active: number }>>([]);
 
   const load = useCallback(async () => {
     const list = await fetch("/api/expedientes").then((response) => response.json()) as { expedientes?: Array<{ id: string; folio: string }> };
@@ -35,6 +36,8 @@ export default function LocalGestorReview() {
       const gateData = await fetch(`/api/expedientes/${first.id}/gates`).then((response) => response.json()) as { gates?: Gate[] };
       setGates(gateData.gates ?? []);
     }
+    const templateData = await fetch("/api/templates").then((response) => response.json()) as { templates?: typeof templates };
+    setTemplates(templateData.templates ?? []);
   }, [scope]);
   useEffect(() => {
     const timer = window.setTimeout(() => { void load(); }, 0);
@@ -78,6 +81,14 @@ export default function LocalGestorReview() {
   if (!expediente) return <p className="text-sm">No hay expedientes para revisar.</p>;
   return <section className="space-y-3 rounded-sm bg-[#b6cde3] p-4 text-[#0d1f33]">
     <h2 className="text-xl font-bold">Revisión de requisitos — Gestor IDC</h2>
+    <div className="rounded bg-white p-3">
+      <h3 className="font-bold">Plantillas Word IDC</h3>
+      <p className="text-xs text-slate-600">DOCX sin macros · máximo 5 MB · versión activa y hash verificable.</p>
+      <ul className="mt-2 grid gap-1 text-xs sm:grid-cols-2">{templates.map((template) => <li key={template.id} className="rounded border p-2">
+        <b>{template.code}</b> · v{template.version} · {template.active ? "activa" : "inactiva"} · <code>{template.sha256.slice(0, 12)}</code>
+        <a className="ml-2 underline" href={`/api/templates/${template.id}`}>Descargar</a>
+      </li>)}</ul>
+    </div>
     <div className="rounded bg-white p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-bold">Mis pendientes</h3>
