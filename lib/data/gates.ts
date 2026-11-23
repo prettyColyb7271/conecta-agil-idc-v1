@@ -91,6 +91,7 @@ function validateClose(id: string, gate: GateCode): void {
   } else if (gate === "G6") {
     requirements(Array.from({ length: 17 }, (_, index) => `U${String(index + 1).padStart(2, "0")}`));
     requireGateEvidence(id, "uiie");
+    requireGateEvidence(id, "certificado_uiie");
   } else if (gate === "G7") {
     requireGateEvidence(id, "medidor");
     requireGateEvidence(id, "interconexion");
