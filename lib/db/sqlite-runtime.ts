@@ -42,7 +42,7 @@ export function migrateDatabase(): number {
       if (applied.has(filename)) continue;
       const sql = fs.readFileSync(path.join(migrationsDir, filename), "utf8");
       insertMigration.run(filename, crypto.createHash("sha256").update(sql).digest("hex"), new Date().toISOString());
-      if (filename === "004_flujo_firma_privacidad.sql") {
+      if (filename === "004_flujo_firma_privacidad.sql" || filename === "007_paso7_eventos_externos.sql") {
         database.exec("COMMIT");
         database.exec("PRAGMA foreign_keys = OFF;");
         database.exec(sql);

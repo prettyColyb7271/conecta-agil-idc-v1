@@ -25,12 +25,12 @@ export async function POST(request: Request, { params }: Params) {
     const blocked = passwordChangeRequired(user);
     if (blocked) return blocked;
     if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
-    const body = await readJson<{ action?: "close" | "reopen" | "event"; gateCode?: string; reason?: string; requirementCodes?: string[]; eventType?: "firma_presencial" | "ingreso_acuse" | "resolucion_cfe" | "contrato" | "uiie" | "medidor" | "cierre"; eventDate?: string; description?: string; documentId?: string; lugar?: string; firmantes?: string[] }>(request);
+    const body = await readJson<{ action?: "close" | "reopen" | "event"; gateCode?: string; reason?: string; requirementCodes?: string[]; eventType?: "firma_presencial" | "ingreso_acuse" | "cfe_incompleto" | "resolucion_cfe" | "contrato" | "uiie" | "visita_uiie" | "certificado_uiie" | "medidor" | "interconexion" | "alta_comercial" | "cierre"; eventDate?: string; description?: string; documentId?: string; lugar?: string; firmantes?: string[]; medio?: string; solicitudNumero?: string; vigenciaMeses?: number; venceAt?: string; resultado?: "favorable" | "condicionado" | "no_favorable"; subgateRequerido?: boolean; subgateDocumentId?: string }>(request);
     const id = (await params).id;
     if (body.action === "event") {
       if (!body.eventType) return Response.json({ error: "eventType es obligatorio." }, { status: 400 });
       const description = [body.description, body.lugar ? `Lugar: ${body.lugar}` : "", body.firmantes?.length ? `Firmantes: ${body.firmantes.join(", ")}` : ""].filter(Boolean).join(" · ");
-      return Response.json({ event: addExternalEvent(user, id, { eventType: body.eventType, eventDate: body.eventDate, description, documentId: body.documentId }) }, { status: 201 });
+      return Response.json({ event: addExternalEvent(user, id, { eventType: body.eventType, eventDate: body.eventDate, description, documentId: body.documentId, medio: body.medio, solicitudNumero: body.solicitudNumero, vigenciaMeses: body.vigenciaMeses, venceAt: body.venceAt, resultado: body.resultado, subgateRequerido: body.subgateRequerido, subgateDocumentId: body.subgateDocumentId }) }, { status: 201 });
     }
     if (!body.action || !body.gateCode) return Response.json({ error: "action y gateCode son obligatorios." }, { status: 400 });
     return Response.json({ gates: transitionGate(user, id, body.gateCode, body.action, body.reason, body.requirementCodes) });
