@@ -3,7 +3,7 @@ import "server-only";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, StandardFonts, rgb, type PDFPage, type PDFFont } from "pdf-lib";
+import { PDFDocument, PDFTextField, StandardFonts, rgb, type PDFPage, type PDFFont } from "pdf-lib";
 import { getAdapters } from "@/lib/adapters";
 import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
@@ -65,7 +65,8 @@ function draw(page: PDFPage, font: PDFFont, text: string, x: number, y: number, 
 }
 
 async function f01(data: Data, version: string, folio: string, notices: string[]): Promise<Buffer> {
-  const template = await fs.readFile(path.join(process.cwd(), "templates", "F-01_base.pdf"));
+  const managedPath = path.join(process.cwd(), "templates", "F-01_gestionable.pdf");
+  const template = await fs.readFile(managedPath).catch(() => fs.readFile(path.join(process.cwd(), "templates", "F-01_base.pdf")));
   const map = JSON.parse(await fs.readFile(path.join(process.cwd(), "templates", "F-01_campos.json"), "utf8")) as Record<string, { page: number; x: number; y: number; size: number; maxWidth: number }>;
   const pdf = await PDFDocument.load(template);
   const page = pdf.getPages()[0];
@@ -84,6 +85,26 @@ async function f01(data: Data, version: string, folio: string, notices: string[]
     capacidad_bruta_kw: get(data, "central", "capacidad_bruta_kw"),
     utm: get(data, "central", "utm"),
   };
+  const fieldNames: Record<string, string> = {
+    tipo_persona: "solicitante.tipo_persona", nombre_razon_social: "solicitante.nombre_razon_social",
+    rfc: "solicitante.rfc", domicilio: "solicitante.domicilio", telefono: "contacto.telefono",
+    correo: "contacto.correo", rpu: "servicio.rpu", tarifa: "servicio.tarifa",
+    nivel_tension_suministro: "servicio.nivel_tension_suministro", tecnologia: "central.tecnologia",
+    capacidad_bruta_kw: "central.capacidad_kw", utm: "central.utm",
+  };
+  const form = pdf.getForm();
+  for (const [field, position] of Object.entries(map)) {
+    const name = fieldNames[field] ?? `solicitud.${field}`;
+    const existing = form.getFields().find((candidate) => candidate.getName() === name);
+    const textField = existing instanceof PDFTextField ? existing : form.createTextField(name);
+    if (!existing) textField.addToPage(pdf.getPages()[position.page] ?? page, {
+      x: position.x, y: position.y - 3, width: position.maxWidth, height: position.size + 5,
+      borderWidth: 0, textColor: rgb(0.13, 0.44, 0.72), font: await pdf.embedFont(StandardFonts.Helvetica),
+    });
+    textField.setFontSize(position.size);
+    textField.setText(values[field] ?? "");
+  }
+  form.updateFieldAppearances(await pdf.embedFont(StandardFonts.Helvetica));
   for (const [field, position] of Object.entries(map)) {
     draw(pdf.getPages()[position.page] ?? page, font, values[field] ?? "", position.x, position.y, position.size, position.maxWidth, notices, field);
   }

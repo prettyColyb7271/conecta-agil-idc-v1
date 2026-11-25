@@ -127,3 +127,6 @@ listas en plural; delimitadores `{{` y `}}`; faltante `______`.
 Reglas Word: marca de corrido, no cambiar formato a media marca, guardar como
 `.docx`, sin macros. [OBSERVADO EN ARCHIVO] se refiere a rutas existentes;
 [PROPUESTA] es la normalización; [PENDIENTE IDC] requiere confirmación.
+## F-01 PDF gestionable
+
+F-01 conserva el PDF oficial de CFE en `templates/F-01_base.pdf` y usa `templates/F-01_gestionable.pdf` como versión AcroForm. Sus campos siguen la convención `grupo.campo`; la lista y coordenadas se mantienen en `templates/F-01_campos.json`. La plantilla no contiene JavaScript y se valida con `npm run plantillas:check`.
