@@ -1,55 +1,211 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Conecta Ágil IDC
 
-## Conecta Ágil IDC
+Piloto para la gestión trazable de expedientes de interconexión fotovoltaica
+en media tensión. La plataforma conserva documentos, versiones, revisiones,
+firmas, eventos externos y el avance de los gates G0-G7.
 
-El proyecto tiene dos modos:
+## Accesos
 
-- `demo`: datos ficticios y adaptadores mock; es el modo usado en Vercel.
-- `local`: API local, SQLite y almacenamiento local; requiere Node 26.
+- **Demo pública en Vercel:** <https://conecta-agil-idc.vercel.app>
+- **Repositorio privado:** <https://github.com/prettyColyb7271/conecta-agil-idc-v1>
+- **Rama de trabajo:** `desarrollo`
+- **Rama estable:** `main`
 
-Configura `NEXT_PUBLIC_MODO=local` y, opcionalmente, `LOCAL_DATA_DIR` a una carpeta fuera de OneDrive. Si no se define, el modo local usa `%LOCALAPPDATA%\ConectaAgil` en Windows o `./local-data` en otros entornos. No se deben guardar documentos reales en el entorno de prueba.
+La demo pública usa `APP_MODE=demo`, datos ficticios y adaptadores mock. No
+debe usarse para documentos reales, contraseñas reales ni pruebas de correo.
+La aplicación local es la que contiene SQLite, almacenamiento local y el
+flujo funcional completo del piloto.
 
-Para el servidor local configura también `APP_MODE=local` al compilar y al arrancar. `APP_MODE` es la fuente de verdad del servidor; `NEXT_PUBLIC_MODO` solo controla la interfaz cliente. El arranque falla si ambos modos no coinciden con el modo registrado en el último build.
+## Alcance implementado
 
-### Usuarios ficticios del modo local
+### Roles y acceso
 
-Después de ejecutar `npm run db:migrate` y `npm run db:seed`, los cuatro usuarios de prueba usan la contraseña ficticia `ConectaLocal-2026!`. Esta contraseña solo sirve para el entorno local de demostración y nunca debe reutilizarse con datos reales.
+- **Cliente:** registro, captura de datos, carga y corrección de documentos,
+  consulta del avance, alertas y documentos externos que le corresponden.
+- **Gestor IDC (`coordinador_idc`):** administra expedientes, revisa
+  requisitos, registra eventos CFE/UIIE, genera formatos y opera los gates.
+- **Administrador de seguridad (`admin_seguridad`):** administra cuentas,
+  roles, sesiones, MFA, recuperación y bitácora. No gestiona expedientes ni
+  valida gates técnicos.
+- No existe un rol operativo separado de Gestor CFE en el piloto.
 
-Los scripts disponibles son `npm run db:reset` (requiere `CONFIRM=1`), `npm run db:migrate` y `npm run db:seed`.
+Las rutas protegidas validan sesión, vencimiento, revocación y rol en el
+servidor. El alta y restablecimiento de Gestores IDC usa enlaces de un solo
+uso. El administrador de seguridad requiere MFA TOTP; la plataforma también
+soporta MFA opcional para otros usuarios.
 
-En modo local, el registro crea una solicitud de cliente pendiente. El coordinador la aprueba desde `/gestor/usuarios`; después el cliente puede iniciar sesión en `/`. Las rutas protegidas validan la cookie de sesión, el vencimiento, la revocación y el rol en el servidor. El administrador de seguridad gestiona cuentas desde `/admin/usuarios` sin consultar el contenido técnico de los expedientes.
+### Flujo del expediente
 
-## Getting Started
+- G0-G2: registro, datos del expediente, requisitos R01-R11, observaciones,
+  versiones y firma presencial.
+- G3: ingreso a CFE, medio, fecha, número de solicitud y acuse físico sellado.
+- G4: oficio resolutivo, vigencia, resultado, características y subgate
+  opcional de estudio, presupuesto o aportación.
+- G5: contrato de interconexión firmado como evidencia externa.
+- G6: requisitos U01-U17, reutilización versionada, visita y certificado UIIE.
+- G7: medidor, interconexión física, alta comercial y cierre revisado por otro
+  Gestor IDC.
+- Un gate G3-G7 no se cierra sin la evidencia externa que corresponda.
+- Los vencimientos generan alertas al consultar; no ejecutan cambios
+  automáticos.
 
-First, run the development server:
+### Documentos
 
-```bash
+- F-01: PDF oficial de CFE con campos AcroForm gestionables y coordenadas
+  documentadas.
+- F-02, F-03, F-04, F-05 y F-06: plantillas Word editables con marcas
+  versionadas, catálogo único y datos ficticios de prueba.
+- Se conservan hashes, versiones y trazabilidad de las plantillas.
+- La captura guiada de la memoria F-05 sigue pendiente; U09 se carga
+  manualmente por ahora.
+
+### Seguridad, correo y auditoría
+
+- MFA TOTP, códigos de respaldo, cifrado de secretos MFA y prevención de
+  reutilización de códigos.
+- Recuperación de acceso con enlaces de un solo uso, expiración, revocación de
+  sesiones y bitácora.
+- Transporte de correo `file` para pruebas y `resend` para el entorno
+  configurado. Las pruebas automáticas nunca envían correos reales.
+- Los secretos viven únicamente en `.env.local`; nunca deben entrar en
+  README, prompts, reportes, logs o commits.
+
+## Ejecutar en local
+
+Requiere Node.js 26 y PowerShell en Windows.
+
+```powershell
+Set-Location 'C:\ruta\al\repositorio\09_MAIN_CODE_V1\Conecta-agil-fase1'
+$env:APP_MODE = 'local'
+$env:NEXT_PUBLIC_MODO = 'local'
+npm install
+npm run db:migrate
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Para la compilación local en el puerto 3140:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```powershell
+$env:APP_MODE = 'local'
+$env:NEXT_PUBLIC_MODO = 'local'
+npm run build
+npm run start -- -p 3140
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Health check:
 
-## Learn More
+```text
+http://localhost:3140/api/health
+```
 
-To learn more about Next.js, take a look at the following resources:
+`LOCAL_DATA_DIR` permite aislar una ejecución y mantener la base fuera de
+OneDrive:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```powershell
+$env:LOCAL_DATA_DIR = 'C:\ruta\temporal\conecta-agil-e2e'
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Usuarios ficticios locales
 
-## Deploy on Vercel
+Después de `npm run db:migrate` y `npm run db:seed`:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Perfil | Correo |
+|---|---|
+| Cliente | `cliente.demo@example.invalid` |
+| Gestor IDC | `coordinador.demo@example.invalid` |
+| Segundo Gestor IDC | `idc2.demo@example.invalid` |
+| Administrador de seguridad | `seguridad.demo@example.invalid` |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+La contraseña de semilla es `ConectaLocal-2026!` y solo sirve para el entorno
+local ficticio. El administrador debe completar el enrolamiento MFA antes de
+usar sus funciones protegidas.
+
+## Pruebas y validación
+
+Comandos mínimos:
+
+```powershell
+npm run lint
+npx tsc --noEmit
+npm run plantillas:check
+npm run test:e2e:isolated
+```
+
+La regresión aislada cubre:
+
+- inicio y cierre de sesión, cookies, vencimiento, revocación y aislamiento
+  entre clientes;
+- permisos de cliente, Gestor IDC y administrador de seguridad;
+- registro, aprobación de cuentas y enlaces de un solo uso;
+- MFA TOTP, códigos de respaldo, recuperación, bitácora y exportación CSV;
+- documentos R01-R11, versiones, observaciones y firmas;
+- generación y validación de F-01 a F-06;
+- flujo G0-G2 y flujo completo G3-G7;
+- evidencias externas, alertas de vigencia, U01-U17 y cierre de expediente.
+
+La suite adversarial adicional está en
+`tests/e2e/supervisor-seguridad-ataque.mjs`. Es una prueba independiente con
+datos generados en memoria; todavía no forma parte de
+`test:e2e:isolated` y debe corregirse o actualizarse antes de convertirla en
+un requisito de CI.
+
+## Plan de Zoho
+
+Conecta Ágil sigue siendo la fuente de verdad del expediente, los documentos,
+las revisiones y las evidencias. Zoho no debe almacenar documentos sensibles
+del piloto ni reemplazar la trazabilidad local.
+
+### Alcance previsto
+
+1. **Zoho Projects:** un proyecto gratuito, `Conecta Ágil - Piloto`, con una
+   lista de tareas por expediente. Se sincronizarán tareas, responsables,
+   fechas, prioridades y estados.
+2. **Zoho CRM:** opcional para cuentas, contactos y seguimiento comercial. No
+   se usará como fuente de verdad documental.
+3. **Zoho WorkDrive:** no se usará como repositorio principal mientras el
+   almacenamiento gratuito y la política de datos de IDC no estén aprobados.
+4. **Outbox y reintentos:** la aplicación registrará qué tarea o notificación
+   debe sincronizarse, el resultado, el error y el último intento. Nunca se
+   expondrán tokens en la interfaz ni en los logs.
+5. **Configuración:** las credenciales, scopes, organización, usuarios y
+   límites del plan deben ser confirmados por IDC antes de activar OAuth o
+   webhooks.
+
+La pantalla de integraciones de Zoho del diseño visual es un catálogo de
+alcance y estado, no prueba de que una cuenta o una conexión real estén
+configuradas.
+
+## Roadmap pendiente
+
+- **Paso 9:** exportación de expedientes, manifest, hashes, CSV, respaldo e
+  importación validada.
+- **Paso 10:** endurecimiento de entrega, respaldo externo, restauración,
+  observabilidad y preparación de migración.
+- Captura guiada y generación completa de F-05.
+- Flujos A y B de la especificación ampliada.
+- Integración de tareas y notificaciones con Zoho Projects.
+- Confirmar con IDC CSA frente a UL, memoria de cálculo, retención, nube,
+  umbrales de potencia y demás pendientes de `README-DEMO-2.md`.
+- Definir dominio de correo verificado, política de almacenamiento y
+  despliegue productivo.
+- Revisar y dejar verde la prueba adversarial antes de incorporarla a CI.
+
+## Reglas de datos
+
+- Usar únicamente datos ficticios en desarrollo, pruebas, Vercel y demos.
+- No copiar nombres, firmas, INE, RFC, domicilios ni documentos del expediente
+  real al repositorio.
+- No guardar `.env.local`, bases SQLite, `outbox`, tokens o claves en Git.
+- Antes de publicar una nueva versión, revisar archivos rastreados y ejecutar
+  las pruebas de lint, TypeScript, plantillas y E2E.
+
+## Documentación relacionada
+
+- Especificación funcional del piloto: `06_DOCUMENTACION_Y_PROMPTS/ESPECIFICACION_PILOTO_MT_FV.md`
+- [Reporte Paso 7b](docs/reportes/PASO_7b.md)
+- [Reporte Paso 8](docs/reportes/PASO_8.md)
+- [Reporte Paso 8c](docs/reportes/PASO_8c.md)
+- [Reporte Paso 8e](docs/reportes/PASO_8e.md)
+- [Catálogo de marcas](docs/PLANTILLAS_MARCAS.md)
+
