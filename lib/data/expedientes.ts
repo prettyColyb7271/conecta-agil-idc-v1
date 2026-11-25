@@ -43,7 +43,7 @@ export type ExpedienteData = {
     modalidad?: string;
     fecha_estimada_operacion?: string;
   };
-  representacion?: { apoderado_id?: string; testigos?: string[] };
+  representacion?: { apoderado_id?: string; testigos?: string[]; enlace_cfe?: string; enlace_cfe_correo?: string };
 };
 
 export type ExpedienteView = {
@@ -187,7 +187,7 @@ const sectionFields: Record<string, readonly string[]> = {
   servicio_actual: ["rpu", "nivel_tension_suministro", "tarifa"],
   central: ["tecnologia", "capacidad_bruta_kw", "capacidad_incrementar_kw", "generacion_mensual_kwh", "unidades", "utm", "modalidad", "fecha_estimada_operacion"],
   contacto: ["nombre", "puesto", "domicilio", "telefono", "correo"],
-  representacion: ["apoderado_id", "testigos"],
+  representacion: ["apoderado_id", "testigos", "enlace_cfe", "enlace_cfe_correo"],
 };
 const addressFields = ["calle", "num_exterior", "num_interior", "colonia", "cp", "municipio", "estado"] as const;
 
@@ -241,6 +241,7 @@ export function updateExpedienteData(user: ScopeUser, id: string, data: Expedien
 function saveExpedienteData(user: ScopeUser, id: string, data: ExpedienteData, allowAfterG1: boolean) {
   const current = getExpediente(user, id);
   if (!current) throw new Error("NOT_FOUND");
+  if (current.status === "cerrado") throw new Error("LOCKED");
   const gate = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(id) as { status: string } | undefined;
   if (!allowAfterG1 && gate?.status === "cerrado") throw new Error("LOCKED");
   validateData(data);

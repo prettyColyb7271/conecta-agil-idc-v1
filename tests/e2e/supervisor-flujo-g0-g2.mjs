@@ -27,6 +27,7 @@ class S { jar = {};
 }
 const pdf = (t) => Buffer.from(`%PDF-1.4\n% ${t}\n%%EOF\n`);
 const up = (s, exp, code, bytes, extra = {}) => { const f = new FormData(); f.set("requirementCode", code); for (const [k, v] of Object.entries(extra)) f.set(k, v); f.set("file", new Blob([bytes], { type: "application/pdf" }), `${code}.pdf`); return s.req("POST", `/api/expedientes/${exp}/documents`, { form: f }); };
+const upEvidence = (s, exp, eventType, bytes, extra = {}) => { const f = new FormData(); f.set("eventType", eventType); for (const [k, v] of Object.entries(extra)) f.set(k, v); f.set("file", new Blob([bytes], { type: "application/pdf" }), `${eventType}.pdf`); return s.req("POST", `/api/expedientes/${exp}/documents`, { form: f }); };
 const streamsOf = async (bytes) => { const doc = await PDFDocument.load(bytes); const out = []; for (const page of doc.getPages()) { const c = page.node.Contents(); const refs = c instanceof PDFArray ? c.asArray() : [c]; for (const r of refs) { const s = doc.context.lookup(r); if (s instanceof PDFRawStream) { let d = Buffer.from(s.contents); try { d = zlib.inflateSync(d); } catch {} out.push(d); } } } return { doc, out }; };
 const hexOf = (t) => Buffer.from(t, "latin1").toString("hex").toUpperCase();
 
@@ -48,7 +49,7 @@ try {
   ok("G0 cierra → 200", c0.status === 200, c0.text);
 
   console.log("== G1 (11 requisitos; carga por un gestor, valida otro)");
-  const cat = (await g1.get(`${E}/requirements/R01`)).json.requirements;
+  const cat = (await g1.get(`${E}/requirements/R01`)).json.requirements.filter((r) => r.requirement_code?.startsWith("R"));
   for (const r of cat) {
     const uploader = /Cliente/.test(r.integra) && !/IDC\//.test(r.integra) ? cli : g1;
     const u = await up(uploader, exp.id, r.requirement_code, pdf(r.requirement_code));
@@ -101,7 +102,8 @@ try {
   ok("PA-04: G2 sin escaneos verificados → 409", c2early.status === 409, c2early.text);
   const scans = {};
   for (const [f, code] of [["F-01", "R01"], ["F-02", "R07"]]) { const s = await up(g1, exp.id, code, pdf(`escaneo ${f}`), { sourceVersionId: gen[f]?.versionId }); scans[f] = s.json?.document; ok(`subir escaneo firmado ${f} (G1 cerrado) → 201`, s.status === 201, `${s.status} ${s.text}`); }
-  const ev = await g1.post(`${E}/gates`, { action: "event", eventType: "firma_presencial", description: "Firma en oficina IDC", lugar: "Hermosillo", firmantes: ["solicitante", "otorgante", "apoderado", "testigo 1", "testigo 2"], documentId: scans["F-01"]?.documentId });
+  const evEvidence = await upEvidence(g1, exp.id, "firma_presencial", pdf("firma presencial"), { description: "Firma en oficina IDC" });
+  const ev = await g1.post(`${E}/gates`, { action: "event", eventType: "firma_presencial", description: "Firma en oficina IDC", lugar: "Hermosillo", firmantes: ["solicitante", "otorgante", "apoderado", "testigo 1", "testigo 2"], documentId: evEvidence.json?.document?.documentId });
   ok("registrar firma presencial → 201", ev.status === 201, ev.text);
   ok("verificar escaneo por quien lo subió → 409", (await g1.post(`${E}/requirements/R01`, { action: "verify_scan", versionId: scans["F-01"]?.versionId })).status === 409);
   for (const [f, code] of [["F-01", "R01"], ["F-02", "R07"]]) { const v = await g2.post(`${E}/requirements/${code}`, { action: "verify_scan", versionId: scans[f]?.versionId }); ok(`verificar escaneo ${f} (otro gestor) → 200`, v.status === 200, v.text); }

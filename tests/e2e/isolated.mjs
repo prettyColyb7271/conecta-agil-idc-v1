@@ -47,6 +47,9 @@ try {
   const paso7 = spawn(process.execPath, ["tests/e2e/supervisor-paso7.mjs"], { cwd: root, env: { ...env, BASE: base }, stdio: "inherit" });
   const paso7Code = await new Promise((resolve) => paso7.on("exit", resolve));
   if (paso7Code !== 0) process.exitCode = paso7Code ?? 1;
+  const flujoG3G7 = spawn(process.execPath, ["tests/e2e/supervisor-flujo-g3-g7.mjs", root], { cwd: root, env, stdio: "inherit" });
+  const flujoG3G7Code = await new Promise((resolve) => flujoG3G7.on("exit", resolve));
+  if (flujoG3G7Code !== 0) process.exitCode = flujoG3G7Code ?? 1;
 } finally {
   if (server && !server.killed) {
     server.kill();

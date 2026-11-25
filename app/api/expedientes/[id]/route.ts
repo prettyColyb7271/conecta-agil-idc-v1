@@ -44,6 +44,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (error instanceof Error && error.message === "NOT_FOUND") return Response.json({ error: "Expediente no encontrado." }, { status: 404 });
     if (error instanceof Error && error.message === "RESPONSABLE_NOT_FOUND") return Response.json({ error: "El Responsable IDC no existe o no está activo." }, { status: 400 });
     if (error instanceof Error && error.message === "FORBIDDEN") return Response.json({ error: "No autorizado." }, { status: 403 });
+    if (error instanceof Error && error.message === "LOCKED") return Response.json({ error: "El expediente está cerrado." }, { status: 409 });
     if (error instanceof RequestInputError || error instanceof ValidationError) return Response.json({ error: error.message }, { status: error instanceof RequestInputError ? error.status : 400 });
     return Response.json({ error: "No fue posible actualizar el expediente." }, { status: 500 });
   }
