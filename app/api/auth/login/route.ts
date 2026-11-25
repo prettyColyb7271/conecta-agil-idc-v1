@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
-import { assertSameOrigin, auditEvent, createSession, MUST_CHANGE_COOKIE, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, createMfaChallenge, createSession, MFA_CHALLENGE_COOKIE, MUST_CHANGE_COOKIE, mfaEnabled, mfaRequiredForRole, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import type { Role } from "@/data/mock";
 import { readJson, RequestInputError } from "@/lib/http";
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     const password = body.password ?? "";
     if (!email || !password || isRateLimited(email)) {
       registerFailure(email);
+      auditEvent({ eventType: "login_bloqueado", entityType: "auth", metadata: { email, ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
       return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 401 });
     }
 
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     const validPassword = user ? verifyPassword(password, user.password_hash) : false;
     if (!user || !validPassword) {
       registerFailure(email);
-      auditEvent({ actorId: user?.id ?? null, actorRole: user?.role ?? null, eventType: "login_fallido", entityType: "user", entityId: user?.id ?? null, metadata: { email } });
+      auditEvent({ actorId: user?.id ?? null, actorRole: user?.role ?? null, eventType: "login_fallido", entityType: "user", entityId: user?.id ?? null, metadata: { email, ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
       return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 401 });
     }
     const rejectedRequest = getDatabase().prepare(
@@ -51,10 +52,17 @@ export async function POST(request: Request) {
     if (user.status === "bloqueado") return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 403 });
 
     failures.delete(email);
+    if (mfaEnabled(user.id) && mfaRequiredForRole(user.role)) {
+      const challenge = createMfaChallenge(user.id);
+      auditEvent({ actorId: user.id, actorRole: user.role, eventType: "mfa_desafio", entityType: "auth", entityId: user.id, metadata: { ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
+      const response = NextResponse.json({ mfaRequired: true });
+      response.cookies.set(MFA_CHALLENGE_COOKIE, challenge.token, { httpOnly: true, sameSite: "lax", secure: new URL(request.url).protocol === "https:", path: "/", expires: new Date(challenge.expiresAt) });
+      return response;
+    }
     const session = createSession(user.id);
     const now = new Date().toISOString();
     getDatabase().prepare("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(now, now, user.id);
-    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "login_ok", entityType: "session", entityId: session.sessionId });
+    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "login_ok", entityType: "session", entityId: session.sessionId, metadata: { ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
     const response = NextResponse.json({ role: user.role, name: user.display_name, mustChangePassword: user.must_change_password === 1 });
     response.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt, request));
     response.cookies.set(ROLE_COOKIE, user.role, sessionCookieOptions(session.expiresAt, request));

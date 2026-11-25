@@ -17,6 +17,10 @@ export const TABLE_NAMES = [
   "audit_events",
   "export_jobs",
   "password_setup_tokens",
+  "user_mfa",
+  "mfa_backup_codes",
+  "mfa_login_challenges",
+  "password_recovery_requests",
 ] as const;
 
 export type TableName = (typeof TABLE_NAMES)[number];

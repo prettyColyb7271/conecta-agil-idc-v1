@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { assertSameOrigin, auditEvent, createPasswordSetupToken, getCurrentUser, hashPassword, passwordChangeRequired, withTransaction } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, createPasswordSetupToken, disableUserMfa, getCurrentUser, hashPassword, mfaRequiredResponse, passwordChangeRequired, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
 
@@ -9,6 +9,8 @@ export async function GET() {
   const passwordResponse = passwordChangeRequired(user);
   if (passwordResponse) return passwordResponse;
   if (!user || user.role !== "admin_seguridad") return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  const mfaResponse = mfaRequiredResponse(user);
+  if (mfaResponse) return mfaResponse;
   const users = getDatabase().prepare(
     `SELECT u.id, u.email, u.display_name, u.role, u.status, u.created_at, u.last_login_at,
             u.must_change_password,
@@ -16,7 +18,8 @@ export async function GET() {
               SELECT COUNT(*) FROM expediente_assignments ea
               JOIN expedientes e ON e.id = ea.expediente_id
               WHERE ea.user_id = u.id AND ea.assignment_type = 'coordinador_idc' AND ea.ends_at IS NULL
-            ) ELSE 0 END AS responsible_count
+            ) ELSE 0             END AS responsible_count,
+            EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL) AS mfa_enabled
      FROM users u WHERE u.role != 'admin_seguridad' ORDER BY u.created_at`,
   ).all();
   return NextResponse.json({ users });
@@ -29,7 +32,9 @@ export async function POST(request: Request) {
     const passwordResponse = passwordChangeRequired(actor);
     if (passwordResponse) return passwordResponse;
     if (!actor || actor.role !== "admin_seguridad") return NextResponse.json({ error: "No autorizado." }, { status: 403 });
-    const body = await readJson<{ userId?: string; action?: "block" | "unblock" | "revoke" | "create_gestor" | "reset_password"; email?: string; displayName?: string }>(request);
+    const mfaResponse = mfaRequiredResponse(actor);
+    if (mfaResponse) return mfaResponse;
+    const body = await readJson<{ userId?: string; action?: "block" | "unblock" | "revoke" | "create_gestor" | "reset_password" | "reset_client_password" | "disable_mfa"; email?: string; displayName?: string; reason?: string }>(request);
     const database = getDatabase();
     if (body.action === "create_gestor") {
       const email = body.email?.trim().toLowerCase();
@@ -79,6 +84,19 @@ export async function POST(request: Request) {
         auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "reset_contrasena", entityType: "user", entityId: target.id });
         const setup = createPasswordSetupToken(target.id, actor.id);
         returnValue = { ok: true, setupUrl: new URL(`/definir-contrasena?token=${encodeURIComponent(setup.token)}`, request.url).toString(), expiresAt: setup.expiresAt };
+      } else if (body.action === "reset_client_password") {
+        if (target.role !== "cliente") throw new Error("USER_NOT_CLIENT");
+        database.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?").run(hashPassword(crypto.randomBytes(32).toString("base64url")), now, target.id);
+        database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
+        auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "recuperacion_cliente_generada", entityType: "user", entityId: target.id });
+        const setup = createPasswordSetupToken(target.id, actor.id);
+        returnValue = { ok: true, setupUrl: new URL(`/definir-contrasena?token=${encodeURIComponent(setup.token)}`, request.url).toString(), expiresAt: setup.expiresAt };
+      } else if (body.action === "disable_mfa") {
+        if (!body.reason?.trim()) throw new Error("MFA_REASON_REQUIRED");
+        disableUserMfa(target.id);
+        database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
+        auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "mfa_desvinculado_admin", entityType: "user_mfa", entityId: target.id, metadata: { reason: body.reason.trim() } });
+        returnValue = { ok: true };
       } else {
         database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
         auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "revocacion_sesiones", entityType: "user", entityId: target.id });

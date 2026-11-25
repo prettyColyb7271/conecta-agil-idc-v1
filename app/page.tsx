@@ -21,6 +21,8 @@ export default function LoginPage() {
   const { t } = usePrefs();
   const router = useRouter();
   const [error, setError] = useState("");
+  const [mfaPending, setMfaPending] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
 
   return (
     <AuthShell logo="/logo_blanco.png">
@@ -32,17 +34,25 @@ export default function LoginPage() {
           const data = new FormData(form);
           if (LOCAL_MODE) {
             void (async () => {
-              const response = await fetch("/api/auth/login", {
+              const response = await fetch(mfaPending ? "/api/auth/mfa/verify" : "/api/auth/login", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ email: data.get("usuario"), password: data.get("password") }),
+                body: JSON.stringify(mfaPending
+                  ? { code: data.get("mfaCode") }
+                  : { email: data.get("usuario"), password: data.get("password") }),
               });
-              const result = await response.json() as { error?: string; role?: Role; name?: string };
+              const result = await response.json() as { error?: string; role?: Role; name?: string; mfaRequired?: boolean };
+              if (result.mfaRequired) {
+                setMfaPending(true);
+                setError("Ingresa el código de tu aplicación Authenticator o un código de respaldo.");
+                return;
+              }
               if (!response.ok || !result.role || !result.name) {
                 setError(result.error ?? "No fue posible iniciar sesión.");
                 return;
               }
               setError("");
+              setMfaPending(false);
               setSession({ name: result.name, role: result.role });
               router.push(PERFILES.find((p) => p.role === result.role)?.ruta ?? "/");
             })();
@@ -75,8 +85,9 @@ export default function LoginPage() {
             ))}
           </select>
         </label>}
-        <input name="usuario" className={inputLgCls} placeholder={t.user} autoComplete="username" />
-        <input name="password" className={inputLgCls} type="password" placeholder={t.password} autoComplete="current-password" />
+        {!mfaPending && <><input name="usuario" className={inputLgCls} placeholder={t.user} autoComplete="username" />
+        <input name="password" className={inputLgCls} type="password" placeholder={t.password} autoComplete="current-password" /></>}
+        {mfaPending && <input name="mfaCode" className={inputLgCls} inputMode="numeric" pattern="[0-9a-fA-F]{6,12}" placeholder="Código MFA o respaldo" autoComplete="one-time-code" autoFocus />}
         {error && <p className="text-center text-sm font-bold text-red-600" role="alert">{error}</p>}
 
         <div className="grid grid-cols-2 gap-3">
@@ -87,11 +98,19 @@ export default function LoginPage() {
             {t.register}
           </Link>
           <button className="rounded-md bg-[#3d6a99] py-3 text-base font-semibold text-white hover:bg-[#4b7bb0]">
-            {t.login}
+            {mfaPending ? "Validar MFA" : t.login}
           </button>
         </div>
 
         <p className="text-center text-xs">{LOCAL_MODE ? "La cuenta debe ser aprobada por el coordinador IDC." : t.demoHint}</p>
+        {LOCAL_MODE && !mfaPending && <button type="button" className="text-xs font-semibold underline" onClick={async () => {
+          const email = window.prompt("Correo de la cuenta cliente:");
+          if (!email) return;
+          const response = await fetch("/api/auth/recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "request", email }) });
+          const data = await response.json() as { message?: string; error?: string };
+          setRecoveryMessage(data.message ?? data.error ?? "Solicitud registrada.");
+        }}>¿Olvidaste tu contraseña?</button>}
+        {recoveryMessage && <p className="text-center text-xs font-semibold">{recoveryMessage}</p>}
       </form>
     </AuthShell>
   );

@@ -23,6 +23,8 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
   admin_seguridad: [
     { href: "/admin", label: "Inicio" },
     { href: "/admin/usuarios", label: "Cuentas" },
+    { href: "/admin/accesos", label: "Accesos" },
+    { href: "/seguridad", label: "Seguridad" },
   ],
 };
 

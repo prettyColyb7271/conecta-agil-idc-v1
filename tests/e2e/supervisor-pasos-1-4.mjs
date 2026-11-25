@@ -29,6 +29,13 @@ class S { // sesión con cookies
 }
 
 const validData = (rfc = "XAXX010101000") => ({ solicitante: { tipo_persona: "moral", nombre_razon_social: "Ficticia Solar SA", rfc }, servicio_actual: { rpu: "123456789012", tarifa: "GDMTH" }, central: { tecnologia: "solar", capacidad_bruta_kw: 100 } });
+function totp(secret) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; let bits = 0; let buffer = 0; const bytes = [];
+  for (const char of secret) { buffer = (buffer << 5) | alphabet.indexOf(char); bits += 5; if (bits >= 8) { bytes.push((buffer >>> (bits - 8)) & 255); bits -= 8; } }
+  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const digest = crypto.createHmac("sha1", Buffer.from(bytes)).update(counter).digest(); const offset = digest[digest.length - 1] & 15;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
 
 console.log("== P1/P2 health y modo");
 const anon = new S();
@@ -50,6 +57,14 @@ console.log("== P3 registro/aprobación");
 const coord = new S(); const admin = new S();
 ok("login coordinador", (await coord.login("coordinador.demo@example.invalid")).status === 200);
 ok("login admin", (await admin.login("seguridad.demo@example.invalid")).status === 200);
+const mfaSetup = await admin.post("/api/auth/mfa", { action: "begin" });
+if (mfaSetup.json?.secret) {
+  const confirmed = await admin.post("/api/auth/mfa", { action: "confirm", code: totp(mfaSetup.json.secret) });
+  const authenticated = new S();
+  const login = await authenticated.login("seguridad.demo@example.invalid");
+  if (login.json?.mfaRequired) await authenticated.post("/api/auth/mfa/verify", { code: confirmed.json?.backupCodes?.[0] });
+  admin.jar = authenticated.jar;
+}
 const mkClient = async (tag) => {
   const s = new S(); const email = `e2e.${tag}.${ts}@example.invalid`; const pw = "E2e-Prueba-2026!";
   await s.post("/api/auth/register", { email, password: pw, displayName: `E2E ${tag}` });
@@ -95,7 +110,7 @@ const demoC = new S(); await demoC.login("cliente.demo@example.invalid");
 const portalDemo = await demoC.get("/portal");
 ok("cliente.demo /portal renderiza IDC-DEMO-0001 sin error", portalDemo.text.includes("IDC-DEMO-0001") && !/"digest"/.test(portalDemo.text));
 for (const [email, path] of [["coordinador.demo@example.invalid", "/gestor"], ["coordinador.demo@example.invalid", "/gestor/proyectos"], ["seguridad.demo@example.invalid", "/admin/usuarios"]]) {
-  const s = new S(); await s.login(email); const r = await s.get(path);
+  const s = email === "seguridad.demo@example.invalid" ? admin : new S(); if (s !== admin) await s.login(email); const r = await s.get(path);
   ok(`${path} (${email.split(".")[0]}) 200 sin error y < 1 MB`, r.status === 200 && !/"digest"/.test(r.text) && r.text.length < 1_000_000, `${r.status} len=${r.text.length}`);
 }
 ok("admin GET /api/expedientes → 403", (await admin.get("/api/expedientes")).status === 403);

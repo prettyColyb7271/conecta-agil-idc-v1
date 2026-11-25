@@ -17,6 +17,10 @@ export const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   audit_events: ["id", "actor_id", "actor_role", "expediente_id", "event_type", "entity_type", "entity_id", "metadata_json", "created_at"],
   export_jobs: ["id", "requested_by", "export_type", "status", "manifest_path", "created_at", "completed_at", "error_message"],
   password_setup_tokens: ["id", "user_id", "token_hash", "expires_at", "used_at", "created_by", "created_at"],
+  user_mfa: ["user_id", "secret_ciphertext", "secret_iv", "secret_auth_tag", "enabled_at", "last_used_step", "created_at", "updated_at"],
+  mfa_backup_codes: ["id", "user_id", "code_hash", "used_at", "created_at"],
+  mfa_login_challenges: ["id", "user_id", "token_hash", "expires_at", "attempts", "created_at"],
+  password_recovery_requests: ["id", "email", "status", "requested_at", "handled_by", "handled_at"],
 };
 
 export const TABLE_PRIMARY_KEYS: Record<TableName, string> = {
@@ -36,6 +40,10 @@ export const TABLE_PRIMARY_KEYS: Record<TableName, string> = {
   audit_events: "id",
   export_jobs: "id",
   password_setup_tokens: "id",
+  user_mfa: "user_id",
+  mfa_backup_codes: "id",
+  mfa_login_challenges: "id",
+  password_recovery_requests: "id",
 };
 
 export function assertTableName(table: string): asserts table is TableName {

@@ -6,7 +6,7 @@ import path from "node:path";
 const root = process.cwd();
 const port = process.env.ISOLATED_PORT ?? "3199";
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-agil-e2e-"));
-const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir };
+const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir, MFA_ENCRYPTION_KEY: process.env.MFA_ENCRYPTION_KEY ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" };
 let server;
 
 function runScript(script) {
@@ -50,6 +50,9 @@ try {
   const flujoG3G7 = spawn(process.execPath, ["tests/e2e/supervisor-flujo-g3-g7.mjs", root], { cwd: root, env, stdio: "inherit" });
   const flujoG3G7Code = await new Promise((resolve) => flujoG3G7.on("exit", resolve));
   if (flujoG3G7Code !== 0) process.exitCode = flujoG3G7Code ?? 1;
+  const seguridad = spawn(process.execPath, ["tests/e2e/supervisor-seguridad-aislado.mjs"], { cwd: root, env, stdio: "inherit" });
+  const seguridadCode = await new Promise((resolve) => seguridad.on("exit", resolve));
+  if (seguridadCode !== 0) process.exitCode = seguridadCode ?? 1;
 } finally {
   if (server && !server.killed) {
     server.kill();

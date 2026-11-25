@@ -15,7 +15,7 @@ const LABEL: Record<EstadoUsuario, string> = { pendiente: "Pendiente de revisió
 export default function AdminUsuarios() {
   const session = useSession();
   const [usuarios, setUsuarios] = useState(usuariosIniciales);
-  const [localUsers, setLocalUsers] = useState<{ id: string; email: string; display_name: string; role: Role; status: EstadoUsuario; last_login_at: string | null; responsible_count: number; must_change_password: number }[]>([]);
+  const [localUsers, setLocalUsers] = useState<{ id: string; email: string; display_name: string; role: Role; status: EstadoUsuario; last_login_at: string | null; responsible_count: number; must_change_password: number; mfa_enabled: number }[]>([]);
   const [requests, setRequests] = useState<{ id: string; email: string; display_name: string; requested_role: Role; created_at: string }[]>([]);
   const [newManager, setNewManager] = useState({ displayName: "", email: "" });
   const [managerMessage, setManagerMessage] = useState("");
@@ -66,11 +66,13 @@ export default function AdminUsuarios() {
       const data = await response.json() as { users: typeof localUsers };
       setLocalUsers(data.users);
     };
-    const change = async (userId: string, action: "block" | "unblock" | "revoke" | "reset_password") => {
+    const change = async (userId: string, action: "block" | "unblock" | "revoke" | "reset_password" | "reset_client_password" | "disable_mfa") => {
+      const reason = action === "disable_mfa" ? window.prompt("Motivo obligatorio para desvincular MFA:")?.trim() : undefined;
+      if (action === "disable_mfa" && !reason) return;
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId, action }),
+        body: JSON.stringify({ userId, action, reason }),
       });
       const data = await response.json() as { error?: string; setupUrl?: string; unassignedCount?: number };
       if (!response.ok) {
@@ -116,12 +118,14 @@ export default function AdminUsuarios() {
             <div key={user.id} className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2 text-sm">
               <span><b>{user.display_name}</b><span className="ml-2 text-xs text-slate-500">{user.email}</span><span className="ml-2 text-xs">Último acceso: {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "nunca"} · Responsables: {user.responsible_count}</span></span>
               <span className="flex gap-2">
-                <span className="text-xs font-bold">{user.status}</span>
+                <span className="text-xs font-bold">{user.status} · MFA: {user.mfa_enabled ? "activo" : "no vinculado"}</span>
                 {user.status === "bloqueado"
                   ? <SmallButton onClick={() => void change(user.id, "unblock")}>Desbloquear</SmallButton>
                   : <SmallButton onClick={() => void change(user.id, "block")}>Bloquear</SmallButton>}
                 <SmallButton onClick={() => void change(user.id, "revoke")}>Revocar sesiones</SmallButton>
                 {user.role === "coordinador_idc" && <SmallButton onClick={() => void change(user.id, "reset_password")}>Restablecer contraseña</SmallButton>}
+                {user.role === "cliente" && <SmallButton onClick={() => void change(user.id, "reset_client_password")}>Generar recuperación</SmallButton>}
+                {Boolean(user.mfa_enabled) && <SmallButton onClick={() => void change(user.id, "disable_mfa")}>Desvincular MFA</SmallButton>}
               </span>
             </div>
           ))}

@@ -4,11 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import crypto from "node:crypto";
 
 const root = process.argv[2];
 const port = "3197"; const B = `http://localhost:${port}`;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "sup-gest-"));
-const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir };
+const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir, MFA_ENCRYPTION_KEY: process.env.MFA_ENCRYPTION_KEY ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" };
 let pass = 0, fail = 0; const fails = []; let serverLog = "";
 const ok = (n, c, x = "") => { if (c) { pass++; console.log("  ✅", n); } else { fail++; fails.push(n); console.log("  ❌", n, x); } };
 const SEED = "ConectaLocal-2026!";
@@ -22,6 +23,13 @@ class S { jar = {};
   login(e, p = SEED) { return this.post("/api/auth/login", { email: e, password: p }); }
 }
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+function totp(secret) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; let bits = 0; let buffer = 0; const bytes = [];
+  for (const char of secret) { buffer = (buffer << 5) | alphabet.indexOf(char); bits += 5; if (bits >= 8) { bytes.push((buffer >>> (bits - 8)) & 255); bits -= 8; } }
+  const key = Buffer.from(bytes); const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const digest = crypto.createHmac("sha1", key).update(counter).digest(); const offset = digest[digest.length - 1] & 15;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
 let server;
 try {
   for (const c of ["db:migrate", "db:seed"]) execFileSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/c", npmCmd, "run", "-s", c], { cwd: root, env, stdio: "ignore" });
@@ -29,6 +37,14 @@ try {
   server.stdout.on("data", (d) => serverLog += d); server.stderr.on("data", (d) => serverLog += d);
   for (let i = 0; i < 100; i++) { try { if ((await fetch(B + "/api/health")).ok) break; } catch {} await new Promise((r) => setTimeout(r, 300)); }
   const adm = new S(); await adm.login("seguridad.demo@example.invalid");
+  const setup = await adm.post("/api/auth/mfa", { action: "begin" });
+  if (setup.json?.secret) {
+    const confirmed = await adm.post("/api/auth/mfa", { action: "confirm", code: totp(setup.json.secret) });
+    const authenticated = new S();
+    const login = await authenticated.login("seguridad.demo@example.invalid");
+    if (login.json?.mfaRequired) await authenticated.post("/api/auth/mfa/verify", { code: confirmed.json?.backupCodes?.[0] });
+    Object.assign(adm, authenticated);
+  }
   const idc = new S(); await idc.login("coordinador.demo@example.invalid");
   const cli = new S(); await cli.login("cliente.demo@example.invalid");
   const email = "nuevo.gestor@example.invalid";
