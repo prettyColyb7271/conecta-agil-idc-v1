@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { assertSameOrigin, auditEvent, getCurrentUser, passwordChangeRequired, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
+import { sendEmail } from "@/lib/email";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -45,6 +46,13 @@ export async function POST(request: Request) {
         database.prepare("UPDATE account_requests SET status = 'rechazada', reviewed_by = ?, reviewed_at = ?, reason = ? WHERE id = ?").run(user.id, now, body.reason!.trim(), accountRequest.id);
         auditEvent({ actorId: user.id, actorRole: user.role, eventType: "rechazo", entityType: "account_request", entityId: accountRequest.id, metadata: { reason: body.reason!.trim() } });
       }
+    });
+    await sendEmail({
+      to: accountRequest.email,
+      subject: body.action === "approve" ? "Tu cuenta fue aprobada — Conecta Ágil IDC" : "Actualización de tu solicitud — Conecta Ágil IDC",
+      text: body.action === "approve"
+        ? `Hola ${accountRequest.display_name}.\n\nTu cuenta fue aprobada. Ya puedes iniciar sesión en ${process.env.PUBLIC_BASE_URL?.trim() || "la plataforma Conecta Ágil IDC"}.\n`
+        : `Hola ${accountRequest.display_name}.\n\nTu solicitud no fue aprobada en esta ocasión.\nMotivo: ${body.reason!.trim()}\n`,
     });
     return NextResponse.json({ ok: true });
   } catch (error) {

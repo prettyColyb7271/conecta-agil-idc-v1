@@ -4,6 +4,7 @@ import { getAppMode } from "@/lib/adapters/config";
 import { assertSameOrigin, auditEvent, hashPassword } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
+import { sendEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
   if (getAppMode() !== "local") return NextResponse.json({ error: "El registro local no está activo en modo demo." }, { status: 404 });
@@ -29,6 +30,11 @@ export async function POST(request: Request) {
         "INSERT INTO account_requests (id, email, display_name, status, user_id, requested_role, created_at) VALUES (?, ?, ?, 'pendiente', ?, 'cliente', ?)",
       ).run(crypto.randomUUID(), email, displayName, userId, now);
       auditEvent({ actorId: userId, actorRole: "cliente", eventType: "registro", entityType: "user", entityId: userId });
+      await sendEmail({
+        to: email,
+        subject: "Solicitud de registro recibida — Conecta Ágil IDC",
+        text: `Hola ${displayName}.\n\nRecibimos tu solicitud de registro. Un coordinador IDC la revisará y recibirás otro aviso cuando haya una decisión.\n`,
+      });
     }
     return NextResponse.json({ message: "Si los datos son válidos, tu solicitud quedó pendiente de revisión." }, { status: 201 });
   } catch (error) {
