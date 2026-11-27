@@ -1,17 +1,27 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { runSuite } from "./helpers/suite-runner.mjs";
 
 const root = process.cwd();
 const port = process.env.ISOLATED_PORT ?? "3199";
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-agil-e2e-"));
 const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir, MFA_ENCRYPTION_KEY: process.env.MFA_ENCRYPTION_KEY ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", EMAIL_TRANSPORT: "file", EMAIL_FROM: "Conecta Agil <no-reply@example.invalid>" };
+const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
+const results = [];
 let server;
 
-function runScript(script) {
-  execFileSync(process.execPath, [path.join(root, "node_modules", "tsx", "dist", "cli.mjs"), script], { cwd: root, env, stdio: "inherit" });
+async function run(name, args, suiteEnv = env) {
+  const result = await runSuite(name, args, { cwd: root, env: suiteEnv });
+  results.push(result);
+  return result.success;
+}
+
+function skip(name, reason) {
+  console.error(`${name}: omitida (${reason})`);
+  results.push({ name, code: null, passed: null, failed: null, success: false, reason });
 }
 
 try {
@@ -26,52 +36,54 @@ try {
       probe.listen(candidate, "::", () => probe.close(resolve));
     });
   }
-  runScript("tests/e2e/regresiones-pr1.ts");
-  runScript("tests/e2e/migration-004-with-data.mjs");
-  runScript("scripts/db-migrate.ts");
-  runScript("scripts/db-seed.ts");
-  server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", port], { cwd: root, env, stdio: "inherit" });
+
+  await run("regresiones-pr1", [tsx, "tests/e2e/regresiones-pr1.ts"]);
+  await run("migration-004-with-data", [tsx, "tests/e2e/migration-004-with-data.mjs"]);
+  await run("supervisor-a0-runner", ["tests/e2e/supervisor-a0-runner.mjs"]);
+  const migrated = await run("db-migrate", [tsx, "scripts/db-migrate.ts"]);
+  let seeded = false;
+  if (migrated) seeded = await run("db-seed", [tsx, "scripts/db-seed.ts"]);
+  else skip("db-seed", "falló la migración");
+
   const base = `http://localhost:${port}`;
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${base}/api/health`);
-      if (response.ok) break;
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 300));
+  let ready = false;
+  if (seeded) {
+    let serverError;
+    server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", port], { cwd: root, env, stdio: "inherit" });
+    server.on("error", (error) => { serverError = error; });
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && !serverError && server.exitCode === null && server.signalCode === null) {
+      try {
+        if ((await fetch(`${base}/api/health`)).ok) { ready = true; break; }
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    if (!ready) {
+      const reason = serverError?.message ?? "el servidor aislado no respondió";
+      console.error(`Servidor aislado: ${reason}`);
+      results.push({ name: "servidor aislado", code: null, passed: null, failed: null, success: false, reason });
+    }
   }
-  const health = await fetch(`${base}/api/health`);
-  if (!health.ok) throw new Error(`Servidor aislado no respondió: ${health.status}`);
-  const result = spawn(process.execPath, ["tests/e2e/supervisor-pasos-1-4.mjs"], { cwd: root, env: { ...env, BASE: base }, stdio: "inherit" });
-  const code = await new Promise((resolve) => result.on("exit", resolve));
-  if (code !== 0) process.exitCode = code ?? 1;
-  const docs = spawn(process.execPath, ["tests/e2e/supervisor-documentos.mjs", root], { cwd: root, env, stdio: "inherit" });
-  const docsCode = await new Promise((resolve) => docs.on("exit", resolve));
-  if (docsCode !== 0) process.exitCode = docsCode ?? 1;
-  const paso6 = spawn(process.execPath, ["tests/e2e/supervisor-paso6.mjs"], { cwd: root, env: { ...env, BASE: base }, stdio: "inherit" });
-  const paso6Code = await new Promise((resolve) => paso6.on("exit", resolve));
-  if (paso6Code !== 0) process.exitCode = paso6Code ?? 1;
-  const gestores = spawn(process.execPath, ["tests/e2e/supervisor-gestores.mjs", root], { cwd: root, env, stdio: "inherit" });
-  const gestoresCode = await new Promise((resolve) => gestores.on("exit", resolve));
-  if (gestoresCode !== 0) process.exitCode = gestoresCode ?? 1;
-  const flujo = spawn(process.execPath, ["tests/e2e/supervisor-flujo-g0-g2.mjs", root], { cwd: root, env, stdio: "inherit" });
-  const flujoCode = await new Promise((resolve) => flujo.on("exit", resolve));
-  if (flujoCode !== 0) process.exitCode = flujoCode ?? 1;
-  const paso7 = spawn(process.execPath, ["tests/e2e/supervisor-paso7.mjs"], { cwd: root, env: { ...env, BASE: base }, stdio: "inherit" });
-  const paso7Code = await new Promise((resolve) => paso7.on("exit", resolve));
-  if (paso7Code !== 0) process.exitCode = paso7Code ?? 1;
-  const flujoG3G7 = spawn(process.execPath, ["tests/e2e/supervisor-flujo-g3-g7.mjs", root], { cwd: root, env, stdio: "inherit" });
-  const flujoG3G7Code = await new Promise((resolve) => flujoG3G7.on("exit", resolve));
-  if (flujoG3G7Code !== 0) process.exitCode = flujoG3G7Code ?? 1;
-  const seguridad = spawn(process.execPath, ["tests/e2e/supervisor-seguridad-aislado.mjs"], { cwd: root, env, stdio: "inherit" });
-  const seguridadCode = await new Promise((resolve) => seguridad.on("exit", resolve));
-  if (seguridadCode !== 0) process.exitCode = seguridadCode ?? 1;
-  const ataque = spawn(process.execPath, ["tests/e2e/supervisor-seguridad-ataque.mjs", root], { cwd: root, env, stdio: "inherit" });
-  const ataqueCode = await new Promise((resolve) => ataque.on("exit", resolve));
-  if (ataqueCode !== 0) process.exitCode = ataqueCode ?? 1;
-  const origen = spawn(process.execPath, ["tests/e2e/supervisor-origen-8d.mjs", root], { cwd: root, env, stdio: "inherit" });
-  const origenCode = await new Promise((resolve) => origen.on("exit", resolve));
-  if (origenCode !== 0) process.exitCode = origenCode ?? 1;
+
+  const suites = [
+    ["supervisor-pasos-1-4", ["tests/e2e/supervisor-pasos-1-4.mjs"], true],
+    ["supervisor-documentos", ["tests/e2e/supervisor-documentos.mjs", root], false],
+    ["supervisor-paso6", ["tests/e2e/supervisor-paso6.mjs"], true],
+    ["supervisor-gestores", ["tests/e2e/supervisor-gestores.mjs", root], false],
+    ["supervisor-flujo-g0-g2", ["tests/e2e/supervisor-flujo-g0-g2.mjs", root], false],
+    ["supervisor-paso7", ["tests/e2e/supervisor-paso7.mjs"], true],
+    ["supervisor-flujo-g3-g7", ["tests/e2e/supervisor-flujo-g3-g7.mjs", root], false],
+    ["supervisor-seguridad-aislado", ["tests/e2e/supervisor-seguridad-aislado.mjs"], false],
+    ["supervisor-seguridad-ataque", ["tests/e2e/supervisor-seguridad-ataque.mjs", root], false],
+    ["supervisor-origen-8d", ["tests/e2e/supervisor-origen-8d.mjs", root], false],
+  ];
+  for (const [name, args, needsSharedServer] of suites) {
+    if (needsSharedServer && !ready) skip(name, "servidor compartido no disponible");
+    else await run(name, args, needsSharedServer ? { ...env, BASE: base } : env);
+  }
+} catch (error) {
+  console.error("Error en la regresión aislada:", error);
+  process.exitCode = 1;
 } finally {
   if (server && !server.killed) {
     server.kill();
@@ -81,8 +93,19 @@ try {
     try {
       fs.rmSync(dataDir, { recursive: true, force: true });
       break;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 300));
+    } catch (error) {
+      if (attempt === 4) {
+        console.error("No se pudieron eliminar los datos temporales:", error);
+        process.exitCode = 1;
+      } else await new Promise((resolve) => setTimeout(resolve, 300));
     }
   }
+  console.log("\nRESUMEN DE REGRESIÓN:");
+  for (const result of results) {
+    const exit = result.code ?? (result.signal ? `señal ${result.signal}` : "sin código");
+    const counts = result.passed === null ? "sin conteo" : `${result.passed} ✅ / ${result.failed} ❌`;
+    const detail = result.error?.message ?? result.reason;
+    console.log(`${result.name} → exit ${exit} → ${counts}${detail ? ` (${detail})` : ""}`);
+  }
+  if (results.some((result) => !result.success)) process.exitCode = 1;
 }

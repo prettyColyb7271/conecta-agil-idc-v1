@@ -251,3 +251,4 @@ ok("logout A", (await A.s.post("/api/auth/logout", {})).status === 200);
 ok("tras logout API → 401/403", [401, 403].includes((await A.s.get("/api/expedientes")).status));
 
 console.log(`\nRESULTADO: ${pass} ✅  /  ${fail} ❌`); if (fails.length) console.log("Fallos:\n - " + fails.join("\n - "));
+if (fail) process.exitCode = 1;

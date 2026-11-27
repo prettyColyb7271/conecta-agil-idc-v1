@@ -127,4 +127,5 @@ try {
 } finally {
   server?.kill(); await new Promise((r) => setTimeout(r, 800)); try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch {}
   console.log(`\nRESULTADO: ${pass} ✅ / ${fail} ❌`); if (fails.length) console.log(" - " + fails.join("\n - "));
+  if (fail) process.exitCode = 1;
 }
