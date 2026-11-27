@@ -23,7 +23,7 @@ class S { jar = {};
   login(e, p = SEED) { return this.post("/api/auth/login", { email: e, password: p }); }
 }
 const b32 = (s) => { const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; let bits = ""; for (const ch of s.replace(/=+$/, "").toUpperCase()) bits += a.indexOf(ch).toString(2).padStart(5, "0"); const out = []; for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2)); return Buffer.from(out); };
-const totp = (secret, offset = 0) => { const step = Math.floor(Date.now() / 30000) + offset; const msg = Buffer.alloc(8); msg.writeBigUInt64BE(BigInt(step)); const h = crypto.createHmac("sha1", b32(secret)).update(msg).digest(); const o = h[h.length - 1] & 15; return String(((h.readUInt32BE(o) & 0x7fffffff) % 1e6)).padStart(6, "0"); };
+const totp = (secret, offset = 0, currentStep = Math.floor(Date.now() / 30000)) => { const step = currentStep + offset; const msg = Buffer.alloc(8); msg.writeBigUInt64BE(BigInt(step)); const h = crypto.createHmac("sha1", b32(secret)).update(msg).digest(); const o = h[h.length - 1] & 15; return String(((h.readUInt32BE(o) & 0x7fffffff) % 1e6)).padStart(6, "0"); };
 const secretOf = (r) => r.json?.secret ?? r.json?.setup?.secret ?? (r.json?.otpauth ?? r.json?.uri ?? "").match(/secret=([A-Z2-7]+)/i)?.[1];
 const waitNextStep = async () => { const ms = 30000 - (Date.now() % 30000) + 300; await new Promise((r) => setTimeout(r, ms)); };
 
@@ -56,13 +56,24 @@ try {
   const a2 = new S(); const l2 = await a2.login("seguridad.demo@example.invalid");
   ok("login pide MFA", l2.json?.mfaRequired === true, l2.text);
   ok("antes del código no hay sesión (API 401/403)", [401, 403].includes((await a2.get("/api/admin/access")).status));
-  const code = totp(sec);
+  let codeStep = Math.floor(Date.now() / 30000);
+  while (30000 - Date.now() % 30000 < 5000 || totp(sec, 0, codeStep) === totp(sec, 1, codeStep)) {
+    await waitNextStep();
+    codeStep = Math.floor(Date.now() / 30000);
+  }
+  const code = totp(sec, 0, codeStep);
   const v2 = await a2.post("/api/auth/mfa/verify", { code });
   ok("código TOTP actual → 200", v2.status === 200, v2.text);
   ok("con sesión MFA: bitácora 200", (await a2.get("/api/admin/access")).status === 200);
   const a3 = new S(); await a3.login("seguridad.demo@example.invalid");
   const v3 = await a3.post("/api/auth/mfa/verify", { code });
   ok("mismo código TOTP reutilizado → 401", v3.status === 401, v3.status);
+  const a4 = new S(); await a4.login("seguridad.demo@example.invalid");
+  const v4 = await a4.post("/api/auth/mfa/verify", { code: totp(sec, 1, codeStep) });
+  ok("código TOTP del paso siguiente → 200", v4.status === 200, v4.status);
+  const a5 = new S(); await a5.login("seguridad.demo@example.invalid");
+  const v5 = await a5.post("/api/auth/mfa/verify", { code });
+  ok("código TOTP de paso anterior ya usado → 401", v5.status === 401, v5.status);
 
   console.log("== MFA opcional de un Gestor IDC");
   const g = new S(); await g.login("coordinador.demo@example.invalid");

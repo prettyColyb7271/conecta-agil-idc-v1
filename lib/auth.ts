@@ -127,7 +127,7 @@ export function verifyPassword(password: string, encoded: string): boolean {
     if (!/^\d{6}$/.test(code)) return null;
     const current = Math.floor(Date.now() / 30000);
     for (const step of [current - 1, current, current + 1]) {
-      if (step !== lastUsedStep && crypto.timingSafeEqual(Buffer.from(totpCode(secret, step)), Buffer.from(code))) return step;
+      if ((lastUsedStep === null || step > lastUsedStep) && crypto.timingSafeEqual(Buffer.from(totpCode(secret, step)), Buffer.from(code))) return step;
     }
     return null;
   }
