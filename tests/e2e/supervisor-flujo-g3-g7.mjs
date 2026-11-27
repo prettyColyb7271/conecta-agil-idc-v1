@@ -48,8 +48,9 @@ try {
   const c0 = await g1.post(`${E}/gates`, { action: "close", gateCode: "G0" });
   ok("G0 cierra → 200", c0.status === 200, c0.text);
 
-  console.log("== G1 (11 requisitos; carga por un gestor, valida otro)");
-  const cat = (await g1.get(`${E}/requirements/R01`)).json.requirements.filter((r) => r.requirement_code?.startsWith("R"));
+  console.log("== G1 (R01-R09 antes de la cita de firma; R10-R11 llegan después de instalar)");
+  const postInstalacion = ["R10", "R11"];
+  const cat = (await g1.get(`${E}/requirements/R01`)).json.requirements.filter((r) => r.requirement_code?.startsWith("R") && !postInstalacion.includes(r.requirement_code));
   const currentData = JSON.parse((await cli.get(E)).json.expediente.data_json);
   currentData.contacto = { nombre: "Responsable Cliente Ficticio", correo: "cliente@example.invalid", telefono: "5550000000" };
   currentData.representacion = { ...(currentData.representacion ?? {}), enlace_cfe: "Enlace CFE Ficticio", enlace_cfe_correo: "enlace@example.invalid" };
@@ -65,7 +66,7 @@ try {
   ok("PA-03: G1 con requisitos sin validar → 409 con lista", c1early.status === 409 && /R0\d/.test(c1early.json?.error ?? ""), c1early.text);
   for (const r of cat) { const v = await g2.post(`${E}/requirements/${r.requirement_code}`, { action: "validate" }); if (v.status !== 200) console.log("    validar", r.requirement_code, v.status, v.text); }
   const c1 = await g1.post(`${E}/gates`, { action: "close", gateCode: "G1" });
-  ok("G1 con 11/11 → 200 y G2 abierto", c1.status === 200 && (await gate("G2")) === "abierto", c1.text);
+  ok("G1 con R01-R09 y sin dictamen UVIE → 200 y G2 abierto", c1.status === 200 && (await gate("G2")) === "abierto", c1.text);
 
   console.log("== formatos");
   const gen = {};
@@ -123,6 +124,15 @@ try {
   ok("usar la INE (R06) como 'acuse' → rechazado", fake.status >= 400, `${fake.status} ${fake.text}`);
   const evt = (body) => g1.post(`${E}/gates`, { action: "event", ...body });
   const close = (g, s = g1) => s.post(`${E}/gates`, { action: "close", gateCode: g });
+  const c3early = await close("G3");
+  ok("G3 sin fotos ni dictamen UVIE → 409", c3early.status === 409 && /R10/.test(c3early.json?.error ?? "") && /R11/.test(c3early.json?.error ?? ""), c3early.text);
+  for (const code of postInstalacion) {
+    const u = await up(g1, exp.id, code, pdf(code));
+    ok(`cargar ${code} con G1 cerrado → 201`, u.status === 201, `${u.status} ${u.text}`);
+    const v = await g2.post(`${E}/requirements/${code}`, { action: "validate" });
+    ok(`validar ${code} con G1 cerrado → 200`, v.status === 200, `${v.status} ${v.text}`);
+  }
+  ok("R09 sigue bloqueado con G1 cerrado → 409", (await up(cli, exp.id, "R09", pdf("R09 tarde"))).status === 409);
   const steps = [
     ["G3", null],
     ["G4", ["resolucion_cfe", { description: "Oficio", resultado: "favorable", vigenciaMeses: 2 }]],
@@ -132,6 +142,7 @@ try {
     if (spec) { const r = await upEvidence(g1, exp.id, spec[0], pdf(spec[0]), spec[1]); if (r.status !== 201) console.log("    evidencia", spec[0], r.status, r.text); }
     const c = await close(g); ok(`${g} cierra`, c.status === 200, c.text);
   }
+  ok("R11 bloqueado tras cerrar G3 → 409", (await up(g1, exp.id, "R11", pdf("R11 tarde"))).status === 409);
   const u = (await g1.get(`${E}/requirements/U01`)).json?.requirements ?? [];
   const uReqs = u.filter((r) => r.requirement_code?.startsWith("U"));
   ok("U01–U17 visibles en la revisión (17)", uReqs.length === 17, `vistos=${uReqs.length} (la lista de revisión solo trae R%?)`);

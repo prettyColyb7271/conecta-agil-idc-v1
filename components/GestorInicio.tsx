@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { Dot, ESTATUS_LABEL, Panel, SmallButton } from "@/components/ui";
-import { Estatus, metas, pendientesGestor, proyectos, tendencia } from "@/data/mock";
+import { Estatus, GATES, metas, pendientesGestor as pendientesDemo, proyectos as proyectosDemo, tendencia } from "@/data/mock";
+
+export type ProyectoTablero = { folio: string; proyecto: string; cliente: string; tramite: string; estatus: Estatus; gate: number };
+export type PendienteTablero = { id: string; titulo: string; folio: string; urgente: boolean };
 
 const FILTROS: { id: "todos" | Estatus; label: string }[] = [
   { id: "todos", label: "Todos" },
@@ -11,7 +14,8 @@ const FILTROS: { id: "todos" | Estatus; label: string }[] = [
   { id: "entiempo", label: "En tiempo" },
 ];
 
-export default function GestorInicio() {
+// Sin props usa los datos de ejemplo de la demo; en modo local recibe expedientes y pendientes reales.
+export default function GestorInicio({ proyectos = proyectosDemo, pendientes = pendientesDemo, datosReales = false }: { proyectos?: ProyectoTablero[]; pendientes?: PendienteTablero[]; datosReales?: boolean }) {
   const [filtro, setFiltro] = useState<"todos" | Estatus>("todos");
   const lista = proyectos.filter((p) => filtro === "todos" || p.estatus === filtro);
   const max = Math.max(...tendencia.map((t) => t.entiempo + t.riesgo + t.atrasado));
@@ -63,8 +67,9 @@ export default function GestorInicio() {
         </Panel>
 
         <Panel title="Pendientes prioritarios">
+          {pendientes.length === 0 && <p className="text-sm">No hay pendientes prioritarios.</p>}
           <ul className="space-y-2">
-            {pendientesGestor.map((p) => (
+            {pendientes.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3">
                 <span>
                   <span className="block text-sm font-bold">{p.titulo}</span>
@@ -77,7 +82,7 @@ export default function GestorInicio() {
         </Panel>
       </div>
 
-      <Panel title="Proyectos (datos ilustrativos)">
+      <Panel title={datosReales ? "Proyectos" : "Proyectos (datos ilustrativos)"}>
         <div className="mb-2 flex flex-wrap gap-2" role="group" aria-label="Filtrar por estatus">
           {FILTROS.map((f) => (
             <SmallButton key={f.id} active={filtro === f.id} onClick={() => setFiltro(f.id)}>{f.label}</SmallButton>
@@ -98,7 +103,7 @@ export default function GestorInicio() {
                   <td className="pr-3"><span className="block font-bold">{p.proyecto}</span><span className="block text-xs text-slate-600">{p.cliente}</span></td>
                   <td className="pr-3">{p.tramite}</td>
                   <td className="pr-3"><span className="flex items-center gap-2 font-bold"><Dot tipo={p.estatus} />{ESTATUS_LABEL[p.estatus]}</span></td>
-                  <td className="font-bold">Gate {p.gate} de 5</td>
+                  <td className="font-bold">Gate {p.gate} de {GATES.length}</td>
                 </tr>
               ))}
               {lista.length === 0 && (

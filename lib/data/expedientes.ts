@@ -12,12 +12,13 @@ export class ValidationError extends Error {
   }
 }
 
-export const ALLOWED_TRAMITES = ["interconexion_fv_mt", "aprobacion_proyecto_mt", "contratacion_medidor"] as const;
+// El piloto se enfoca solo en la interconexión FV en media tensión.
+export const ALLOWED_TRAMITES = ["interconexion_fv_mt"] as const;
 
 export type ExpedienteInput = {
   clienteId: string;
   tramite: string;
-  nivelTension: "BT" | "MT";
+  nivelTension: "MT";
   habilitado: boolean;
   responsableId?: string;
 };
@@ -173,12 +174,12 @@ export function listGestorPendientes(user: ScopeUser, scope: "mine" | "all" = "a
     SELECT e.id AS expediente_id, e.folio
     FROM expedientes e
     WHERE ${scope === "mine" ? "e.gestor_id = ? AND" : ""} (
-      SELECT COUNT(*) FROM expediente_requirements er WHERE er.expediente_id = e.id AND er.requirement_code BETWEEN 'R01' AND 'R11'
+      SELECT COUNT(*) FROM expediente_requirements er WHERE er.expediente_id = e.id AND er.requirement_code BETWEEN 'R01' AND 'R09'
         AND er.status IN ('validado_idc', 'no_aplica_justificado')
-    ) = 11
+    ) = 9
     ORDER BY e.folio
   `).all(...params) as Array<{ expediente_id: string; folio: string }>;
-  for (const item of ready) pending.push({ kind: "listo_g1", expedienteId: item.expediente_id, folio: item.folio, label: "Listo para cerrar G1." });
+  for (const item of ready) pending.push({ kind: "listo_g1", expedienteId: item.expediente_id, folio: item.folio, label: "Listo para la cita única de firma (G1)." });
   return pending;
 }
 
@@ -292,7 +293,7 @@ export function acceptPrivacy(user: ScopeUser, id: string, version: string) {
 export function createExpediente(user: ScopeUser, input: ExpedienteInput) {
   if (user.role !== "coordinador_idc") throw new Error("FORBIDDEN");
   if (!ALLOWED_TRAMITES.includes(input.tramite as typeof ALLOWED_TRAMITES[number])) throw new ValidationError("Trámite no permitido.");
-  if (input.nivelTension !== "BT" && input.nivelTension !== "MT") throw new ValidationError("nivelTension debe ser BT o MT.");
+  if (input.nivelTension !== "MT") throw new ValidationError("El piloto solo admite media tensión (MT).");
   const database = getDatabase();
   const now = new Date().toISOString();
   return withTransaction(() => {

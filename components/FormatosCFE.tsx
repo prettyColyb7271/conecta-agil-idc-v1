@@ -78,7 +78,7 @@ export default function FormatosCFE() {
         </div>
       </Panel>
 
-      <Panel title="Trámite Interconexión GD">
+      <Panel title="Trámite: interconexión FV en MT">
         <p className="text-sm font-bold">Documentos {subidos} de {docs.length} subidos</p>
         <div
           className="my-2 h-4 overflow-hidden rounded bg-[#0d1f33]"

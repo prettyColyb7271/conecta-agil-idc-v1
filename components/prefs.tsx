@@ -36,9 +36,7 @@ export const dict = {
     proc: "Trámite",
     procPh: "Tipo de trámite",
     procs: [
-      "Aprobación de proyecto y entrega-recepción de obra en MT",
-      "Contratación y colocación de medidor",
-      "Interconexión fotovoltaica (Generación Distribuida)",
+      "Interconexión fotovoltaica en media tensión (MT)",
     ],
     notice: "Tu petición se enviará y será evaluada a",
     submit: "Enviar solicitud",
@@ -83,9 +81,7 @@ export const dict = {
     proc: "Procedure",
     procPh: "Procedure type",
     procs: [
-      "Project approval and work handover (MV)",
-      "Supply contract and meter installation",
-      "Photovoltaic interconnection (Distributed Generation)",
+      "Photovoltaic interconnection in medium voltage (MV)",
     ],
     notice: "Your request will be sent and reviewed by",
     submit: "Send request",

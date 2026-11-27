@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { getExpediente } from "@/lib/data/expedientes";
+import { REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA } from "@/lib/etapas";
 
 export class GateValidationError extends Error {
   constructor(message: string) {
@@ -67,9 +68,8 @@ function validateClose(id: string, gate: GateCode): void {
     if (!row?.cliente_id || !row.gestor_id || !row.tramite || !row.nivel_tension) throw new GateConflictError("G0 requiere expediente, cliente, responsable, trámite y nivel de tensión.");
     if (!row.privacy_accepted_at) throw new GateConflictError("G0 requiere la aceptación del aviso de privacidad por el cliente.");
   } else if (gate === "G1") {
-    requirements(Array.from({ length: 11 }, (_, index) => `R${String(index + 1).padStart(2, "0")}`));
-    const r11 = database.prepare("SELECT version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = 'R11'").get(id) as { version_id: string | null } | undefined;
-    if (!r11?.version_id) throw new GateConflictError("G1 requiere el dictamen UVIE cargado.");
+    // Listo para la cita única de firma: no espera la instalación ni el dictamen UVIE.
+    requirements([...REQUISITOS_PRE_FIRMA]);
   } else if (gate === "G2") {
     for (const code of ["R01", "R07"]) {
       const row = database.prepare("SELECT status FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?").get(id, code) as { status: string } | undefined;
@@ -77,6 +77,10 @@ function validateClose(id: string, gate: GateCode): void {
     }
     requireGateEvidence(id, "firma_presencial");
   } else if (gate === "G3") {
+    // Fotos del sistema funcionando y dictamen UVIE son requisito para ingresar a CFE.
+    requirements([...REQUISITOS_POST_INSTALACION]);
+    const r11 = database.prepare("SELECT version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = 'R11'").get(id) as { version_id: string | null } | undefined;
+    if (!r11?.version_id) throw new GateConflictError("G3 requiere el dictamen UVIE cargado.");
     const event = getDatabase().prepare("SELECT medio, solicitud_numero FROM external_events WHERE expediente_id = ? AND event_type = 'ingreso_acuse' ORDER BY event_date DESC LIMIT 1").get(id) as { medio: string | null; solicitud_numero: string | null } | undefined;
     requireGateEvidence(id, "ingreso_acuse");
     if (!event?.medio || !event.solicitud_numero) throw new GateConflictError("G3 requiere medio y número de solicitud CFE.");

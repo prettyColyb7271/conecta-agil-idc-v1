@@ -107,13 +107,23 @@ export default function AppShell({ role, children }: { role: Role; children: Rea
           <button
             onClick={async () => {
               if (localMode) {
-                await fetch("/api/auth/logout", {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                });
+                try {
+                  const response = await fetch("/api/auth/logout", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                  });
+                  if (!response.ok) {
+                    window.alert("No fue posible cerrar la sesión. Recarga la página e inténtalo de nuevo.");
+                    return;
+                  }
+                } catch {
+                  window.alert("No hay conexión con el servidor. Verifica que la app siga corriendo.");
+                  return;
+                }
               }
               clearSession();
-              router.push("/");
+              router.replace("/");
+              router.refresh();
             }}
             className="mt-2 rounded border border-white px-3 py-1 text-sm hover:bg-white/10 md:mt-auto"
           >

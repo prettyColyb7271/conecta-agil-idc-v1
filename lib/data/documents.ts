@@ -6,6 +6,7 @@ import { getAdapters } from "@/lib/adapters";
 import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { getExpediente, type ScopeUser } from "@/lib/data/expedientes";
+import { esPostInstalacion } from "@/lib/etapas";
 
 export class DocumentValidationError extends Error {
   constructor(message: string) {
@@ -29,7 +30,7 @@ const allowedTypes = new Map([
 ]);
 const externalEventTypes = new Set(["firma_presencial", "ingreso_acuse", "resolucion_cfe", "contrato", "uiie", "certificado_uiie", "medidor", "interconexion", "alta_comercial"]);
 
-type RequirementRow = { id: string; status: string; document_id: string | null; version_id: string | null; observed_reason: string | null; requirement_code: string; name: string; tipo: string; integra: string; sensible: number; validaciones: string };
+type RequirementRow = { id: string; status: string; document_id: string | null; version_id: string | null; observed_reason: string | null; requirement_code: string; name: string; tipo: string; integra: string; sensible: number; validaciones: string; reutiliza_code?: string | null };
 type DocumentRow = { id: string; requirement_id: string; status: string };
 
 function assertVisible(user: ScopeUser, expedienteId: string): NonNullable<ReturnType<typeof getExpediente>> {
@@ -94,8 +95,11 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
   } else if (!isIdc(user)) throw new Error("FORBIDDEN");
   const gate = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(expedienteId) as { status: string } | undefined;
   const g6 = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G6'").get(expedienteId) as { status: string } | undefined;
+  const g3 = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G3'").get(expedienteId) as { status: string } | undefined;
   const isSignedScan = Boolean(sourceVersionId);
-  if (gate?.status === "cerrado" && !isSignedScan && !(requirementCode.startsWith("U") && g6?.status === "abierto")) throw new Error("LOCKED");
+  // Fotos y dictamen UVIE (R10-R11) se cargan después de la cita de firma, hasta el ingreso a CFE (G3).
+  const postInstalacionAbierto = esPostInstalacion(requirementCode) && g3?.status !== "cerrado";
+  if (gate?.status === "cerrado" && !isSignedScan && !postInstalacionAbierto && !(requirementCode.startsWith("U") && g6?.status === "abierto")) throw new Error("LOCKED");
   if (isSignedScan && !isIdc(user)) throw new Error("FORBIDDEN");
   const definition = allowedTypes.get(file.type);
   if (!definition) throw new DocumentValidationError("Solo se permiten archivos PDF, JPG o PNG.");
@@ -219,7 +223,7 @@ export function listRequirementReview(user: AuthUser, expedienteId: string) {
   const database = getDatabase();
   const rows = database.prepare(`
     SELECT er.id, er.requirement_code, er.status, er.document_id, er.version_id, er.observed_reason,
-           rc.name, rc.tipo, rc.integra, rc.sensible, rc.validaciones
+           rc.name, rc.tipo, rc.integra, rc.sensible, rc.validaciones, rc.reutiliza_code
     FROM expediente_requirements er JOIN requirement_catalog rc ON rc.code = er.requirement_code
     WHERE er.expediente_id = ? AND (er.requirement_code LIKE 'R%' OR er.requirement_code LIKE 'U%') ORDER BY er.requirement_code
   `).all(expedienteId) as RequirementRow[];
@@ -240,7 +244,9 @@ export function reviewRequirement(user: AuthUser, expedienteId: string, requirem
   assertOpenExpediente(expedienteId);
   const gate = database.prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(expedienteId) as { status: string } | undefined;
   const g6 = database.prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G6'").get(expedienteId) as { status: string } | undefined;
-  if (requirementCode.startsWith("R") && gate?.status === "cerrado") throw new DocumentConflictError("La revisión está bloqueada porque G1 está cerrado.");
+  const g3 = database.prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G3'").get(expedienteId) as { status: string } | undefined;
+  const postInstalacionAbierto = esPostInstalacion(requirementCode) && g3?.status !== "cerrado";
+  if (requirementCode.startsWith("R") && gate?.status === "cerrado" && !postInstalacionAbierto) throw new DocumentConflictError("La revisión está bloqueada porque G1 está cerrado.");
   if (requirementCode.startsWith("U") && g6?.status !== "abierto") throw new DocumentConflictError("La revisión UIIE solo está disponible con G6 abierto.");
   const requirement = database.prepare("SELECT er.id, er.status, er.version_id, dv.author_id FROM expediente_requirements er LEFT JOIN document_versions dv ON dv.id = er.version_id WHERE er.expediente_id = ? AND er.requirement_code = ?").get(expedienteId, requirementCode) as { id: string; status: string; version_id: string | null; author_id: string | null } | undefined;
   if (!requirement) throw new Error("NOT_FOUND");
@@ -252,7 +258,8 @@ export function reviewRequirement(user: AuthUser, expedienteId: string, requirem
   if (action === "validate" && requirement.author_id === user.id) throw new DocumentConflictError("No puedes validar un documento que tú mismo subiste.");
   const internalNote = action === "observe" && visibility === "interno_idc";
   const status = internalNote ? requirement.status : action === "validate" ? "validado_idc" : action === "observe" ? "observado" : "no_aplica_justificado";
-  const visibleReason = visibility === "cliente" ? reason : null;
+  // node:sqlite no acepta undefined como parámetro; validar no lleva motivo.
+  const visibleReason = visibility === "cliente" ? reason ?? null : null;
   const now = new Date().toISOString();
   withTransaction(() => {
     database.prepare("UPDATE expediente_requirements SET status = ?, observed_reason = ?, validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ?").run(status, visibleReason, action === "validate" ? user.id : null, action === "validate" ? now : null, now, requirement.id);

@@ -104,7 +104,7 @@ export default function RegistroPage() {
           </div>
           <div>
             <label className={label}>{t.proc}:</label>
-            <select name="tramite" className={inputCls} defaultValue="" required>
+            <select name="tramite" className={inputCls} defaultValue="0" required>
               <option value="" disabled>{t.procPh}</option>
               {t.procs.map((p, i) => (
                 <option key={i} value={i}>{p}</option>

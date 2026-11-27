@@ -1,0 +1,49 @@
+"use client";
+
+import { useState } from "react";
+import { Panel } from "@/components/ui";
+
+const input = "w-full rounded border border-[#1b3d66] bg-white px-3 py-2 text-sm text-[#0d1f33]";
+
+// Captura única de los datos que alimentan F-01 y F-04.
+export default function CapturaDatos({ expedienteId, dataJson }: { expedienteId: string; dataJson: string }) {
+  const raw = JSON.parse(dataJson) as Record<string, Record<string, unknown>>;
+  const initial = {
+    solicitante: raw.solicitante,
+    servicio_actual: raw.servicio_actual,
+    central: raw.central ? Object.fromEntries(["tecnologia", "capacidad_bruta_kw", "capacidad_incrementar_kw", "generacion_mensual_kwh", "unidades", "utm", "modalidad", "fecha_estimada_operacion"].filter((key) => key in raw.central).map((key) => [key, raw.central[key]])) : undefined,
+    contacto: raw.contacto,
+    representacion: raw.representacion,
+  };
+  const [data, setData] = useState(initial as Record<string, Record<string, unknown>>);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const value = (section: string, field: string) => String(data[section]?.[field] ?? "");
+  const update = (section: string, field: string, next: string | number) => setData((current) => ({ ...current, [section]: { ...(current[section] ?? {}), [field]: next } }));
+  async function save() {
+    setError(""); setMessage("");
+    const response = await fetch(`/api/expedientes/${expedienteId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ data }) });
+    const body = await response.json();
+    if (!response.ok) setError(body.error ?? "No fue posible guardar los datos.");
+    else setMessage("Datos guardados correctamente.");
+  }
+  return (
+    <Panel title="Captura de datos F-01 / F-04">
+      <p className="mb-3 text-xs text-slate-600">Se capturan una sola vez; con ellos IDC genera la solicitud y los demás formatos.</p>
+      <div className="grid gap-3 md:grid-cols-2 text-[#0d1f33]">
+        <label className="text-xs font-bold">Tipo de persona<select className={input} value={value("solicitante", "tipo_persona")} onChange={(e) => update("solicitante", "tipo_persona", e.target.value)}><option value="">Selecciona</option><option value="fisica">Física</option><option value="moral">Moral</option></select></label>
+        <label className="text-xs font-bold">Nombre / razón social<input className={input} value={value("solicitante", "nombre_razon_social")} onChange={(e) => update("solicitante", "nombre_razon_social", e.target.value)} /></label>
+        <label className="text-xs font-bold">RFC<input className={input} maxLength={13} value={value("solicitante", "rfc")} onChange={(e) => update("solicitante", "rfc", e.target.value.toUpperCase())} /></label>
+        <label className="text-xs font-bold">Correo<input className={input} type="email" value={value("solicitante", "correo")} onChange={(e) => update("solicitante", "correo", e.target.value)} /></label>
+        <label className="text-xs font-bold">Teléfono<input className={input} value={value("solicitante", "telefono")} onChange={(e) => update("solicitante", "telefono", e.target.value)} /></label>
+        <label className="text-xs font-bold">RPU<input className={input} value={value("servicio_actual", "rpu")} onChange={(e) => update("servicio_actual", "rpu", e.target.value)} /></label>
+        <label className="text-xs font-bold">Nivel de tensión del suministro<input className={input} value={value("servicio_actual", "nivel_tension_suministro")} onChange={(e) => update("servicio_actual", "nivel_tension_suministro", e.target.value)} /></label>
+        <label className="text-xs font-bold">Tarifa<input className={input} value={value("servicio_actual", "tarifa")} onChange={(e) => update("servicio_actual", "tarifa", e.target.value)} /></label>
+        <label className="text-xs font-bold">Tecnología<input className={input} value={value("central", "tecnologia")} onChange={(e) => update("central", "tecnologia", e.target.value)} /></label>
+        <label className="text-xs font-bold">Capacidad bruta (kW)<input className={input} type="number" min="0.01" value={value("central", "capacidad_bruta_kw")} onChange={(e) => update("central", "capacidad_bruta_kw", Number(e.target.value))} /></label>
+      </div>
+      <button onClick={() => void save()} className="mt-4 rounded bg-[#0d1f33] px-5 py-2 text-sm font-semibold text-white">Guardar datos</button>
+      {message && <p role="status" className="mt-2 text-sm font-bold text-emerald-800">{message}</p>}{error && <p role="alert" className="mt-2 text-sm font-bold text-red-700">{error}</p>}
+    </Panel>
+  );
+}

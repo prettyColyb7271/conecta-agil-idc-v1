@@ -1,5 +1,7 @@
 // Datos de ejemplo. Más adelante vendrán de Supabase con esta misma forma.
 
+import { ETAPAS, TRAMITE_FV_MT_LABEL } from "@/lib/etapas";
+
 // Roles según ESPECIFICACION_PILOTO_MT_FV.md §2
 export type Role = "cliente" | "gestor_tramites_cfe" | "coordinador_idc" | "admin_seguridad";
 export type Estatus = "atrasado" | "riesgo" | "entiempo";
@@ -11,17 +13,12 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin_seguridad: "Administrador de seguridad",
 };
 
-export const GATES = [
-  { n: 1, nombre: "Alta y clasificación" },
-  { n: 2, nombre: "Revisión antes de CFE" },
-  { n: 3, nombre: "Cierre de obra y pruebas" },
-  { n: 4, nombre: "Plazos y vigencias" },
-  { n: 5, nombre: "Cierre del expediente" },
-];
+// Las 8 etapas G0-G7 del trámite de interconexión FV en MT.
+export const GATES = ETAPAS.map((etapa, index) => ({ n: index + 1, code: etapa.code, nombre: etapa.nombre }));
 
 export const expediente = {
   folio: "IDC-2026-021",
-  tramite: "Aprobación de proyecto y entrega de recepción de obra en MT.",
+  tramite: TRAMITE_FV_MT_LABEL,
   kpis: [
     { color: "#7c4dff", valor: "4.5", titulo: "Semanas a Energización", nota: "Límite máximo desde obra terminada" },
     { color: "#2563eb", valor: "90%", titulo: "Aceptación inicial", nota: "Aprobación al primer ingreso CFE" },
@@ -34,14 +31,13 @@ export const notificaciones = [
 ];
 
 export const pendientes = [
-  { id: "p1", titulo: "Firmar la carta poder", archivo: "IDC_CartaPoder_021.pdf", urgente: true, hora: "12:03:07" },
+  { id: "p1", titulo: "Cita única de firma: solicitud CFE y carta poder", archivo: "IDC_PaqueteFirma_021.pdf", urgente: true, hora: "12:03:07" },
 ];
 
 export const procesos: {
   id: string; nombre: string; archivo: string; estatus: Estatus; detalle: string; gate: number;
 }[] = [
-  { id: "pr1", nombre: "Contratación y medidor", archivo: "IDC_ContratodeContraprestación_021.pdf", estatus: "atrasado", detalle: "- 1 día", gate: 3 },
-  { id: "pr2", nombre: "Interconexión GD", archivo: "IDC_SolicituddeInterconexión_021.pdf", estatus: "riesgo", detalle: "12:03:07", gate: 2 },
+  { id: "pr1", nombre: "Interconexión FV en MT", archivo: "IDC_SolicituddeInterconexión_021.pdf", estatus: "riesgo", detalle: "12:03:07", gate: 3 },
 ];
 
 // ---------- Formatos CFE (datos de ejemplo) ----------
@@ -68,8 +64,8 @@ export const documentosGD: { id: string; nombre: string; archivo: string | null 
 ];
 
 export const formatosTramite: { id: string; nombre: string; archivo: string; completado: boolean }[] = [
-  { id: "f-cm", nombre: "Contratación y medidor", archivo: "IDC_ContratodeContraprestación_021.pdf", completado: false },
-  { id: "f-gd", nombre: "Interconexión GD", archivo: "IDC_SolicituddeInterconexión_021.pdf", completado: false },
+  { id: "f-gd", nombre: "Solicitud de interconexión (F-01)", archivo: "IDC_SolicituddeInterconexión_021.pdf", completado: false },
+  { id: "f-cp", nombre: "Carta poder para CFE (F-02)", archivo: "IDC_CartaPoder_021.pdf", completado: false },
 ];
 
 export const camposFormato: { id: string; label: string; requerido?: boolean }[] = [
@@ -108,19 +104,19 @@ export const tendencia = [
 
 export const pendientesGestor = [
   { id: "g1", titulo: "Revisar acta constitutiva observada", folio: "IDC-2026-021", urgente: true },
-  { id: "g2", titulo: "Vence plazo de respuesta de CFE (2 meses)", folio: "IDC-2026-017", urgente: true },
-  { id: "g3", titulo: "Subir Formato 5 a SISPROTER", folio: "IDC-2026-014", urgente: false },
+  { id: "g2", titulo: "Vence la vigencia del oficio resolutivo (2 meses)", folio: "IDC-2026-017", urgente: true },
+  { id: "g3", titulo: "Llegó el oficio: agendar firma de contratos", folio: "IDC-2026-014", urgente: false },
 ];
 
-export const tramites = ["Aprobación de proyecto MT y entrega-recepción", "Contratación y colocación de medidor", "Interconexión GD"];
+export const tramites = [TRAMITE_FV_MT_LABEL];
 
 export const proyectos: {
   folio: string; proyecto: string; cliente: string; tramite: string; estatus: Estatus; gate: number; responsable: string;
 }[] = [
-  { folio: "IDC-2026-021", proyecto: "Subestación planta Hermosillo", cliente: "Industrias Ejemplo S.A. de C.V.", tramite: "Interconexión GD", estatus: "riesgo", gate: 2, responsable: "Olegario Serenes" },
-  { folio: "IDC-2026-017", proyecto: "Línea MT parque industrial", cliente: "Parque Norte S.A.", tramite: "Aprobación MT", estatus: "atrasado", gate: 3, responsable: "Olegario Serenes" },
-  { folio: "IDC-2026-014", proyecto: "Contratación bodega 2", cliente: "Logística Sonora S.A.", tramite: "Contratación y medidor", estatus: "entiempo", gate: 4, responsable: "Olegario Serenes" },
-  { folio: "IDC-2026-009", proyecto: "Paneles solares oficinas", cliente: "Despacho Ejemplo", tramite: "Interconexión GD", estatus: "entiempo", gate: 5, responsable: "Olegario Serenes" },
+  { folio: "IDC-2026-021", proyecto: "Central FV 45.5 kWp planta Hermosillo", cliente: "Industrias Ejemplo S.A. de C.V.", tramite: "Interconexión FV MT", estatus: "riesgo", gate: 3, responsable: "Olegario Serenes" },
+  { folio: "IDC-2026-017", proyecto: "Central FV parque industrial", cliente: "Parque Norte S.A.", tramite: "Interconexión FV MT", estatus: "atrasado", gate: 5, responsable: "Olegario Serenes" },
+  { folio: "IDC-2026-014", proyecto: "Central FV bodega 2", cliente: "Logística Sonora S.A.", tramite: "Interconexión FV MT", estatus: "entiempo", gate: 6, responsable: "Olegario Serenes" },
+  { folio: "IDC-2026-009", proyecto: "Paneles solares oficinas", cliente: "Despacho Ejemplo", tramite: "Interconexión FV MT", estatus: "entiempo", gate: 8, responsable: "Olegario Serenes" },
 ];
 
 export type EstadoUsuario = "pendiente" | "activo" | "bloqueado";

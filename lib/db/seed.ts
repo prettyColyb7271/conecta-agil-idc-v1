@@ -121,7 +121,7 @@ export function seedDatabase(): { users: number; requirements: number; expedient
     ).run(
       expedienteId,
       "IDC-DEMO-0001",
-      "Interconexión de central fotovoltaica en media tensión",
+      "interconexion_fv_mt",
       clienteId,
       coordinadorId,
       coordinadorId,

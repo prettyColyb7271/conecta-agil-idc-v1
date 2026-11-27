@@ -99,6 +99,6 @@ export async function renderDocx(code: DocxFormat, data: Record<string, unknown>
 
 export function templateHash(bytes: Buffer): string { return crypto.createHash("sha256").update(bytes).digest("hex"); }
 export function listTemplates() {
-  return getDatabase().prepare("SELECT code, filename, version, sha256, active, created_at FROM templates ORDER BY code, version DESC").all();
+  return getDatabase().prepare("SELECT id, code, filename, version, sha256, active, created_at FROM templates ORDER BY code, version DESC").all();
 }
 export { assertSafeDocx };
