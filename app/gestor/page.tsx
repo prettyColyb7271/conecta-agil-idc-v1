@@ -38,7 +38,7 @@ export default async function Page() {
   return (
     <>
       <GestorInicio proyectos={proyectos} pendientes={pendientes} datosReales />
-      <LocalGestorReview />
+      <LocalGestorReview usuarioId={user.id} />
     </>
   );
 }

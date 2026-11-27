@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Panel, SmallButton } from "@/components/ui";
 import { ETAPAS, REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA, esPostInstalacion } from "@/lib/etapas";
 import { encabezadoGate, gateActual } from "@/lib/semaforo";
+import RegistrarEventos from "@/components/RegistrarEventos";
 
 type Requirement = {
   requirement_code: string;
@@ -23,7 +24,7 @@ type Gate = { gate_code: string; status: string };
 type Expediente = { id: string; folio: string; cliente_nombre: string };
 type Template = { id: string; code: string; version: number; sha256: string; active: number };
 type Format = { document_id: string; document_type: string; status: string; version_id: string; version_number: number; original_filename: string };
-type ExternalEvent = { event_type: string; document_id: string | null; description: string };
+type ExternalEvent = { event_type: string; document_id: string | null; description: string; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null };
 type Aviso = { ok: boolean; text: string };
 type Firma = { fecha: string; lugar: string; solicitante: string; otorgante: string; apoderado: string; testigo1: string; testigo2: string; evidencia: File | null };
 const firmaVacia = (): Firma => ({ fecha: "", lugar: "", solicitante: "", otorgante: "", apoderado: "", testigo1: "", testigo2: "", evidencia: null });
@@ -89,13 +90,14 @@ function Punto({ color }: { color: string }) {
   return <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: color }} aria-hidden />;
 }
 
-export default function LocalGestorReview() {
+export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) {
   const [expedientes, setExpedientes] = useState<Expediente[]>([]);
   const [selId, setSelId] = useState<string>("");
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [gates, setGates] = useState<Gate[]>([]);
   const [formats, setFormats] = useState<Format[]>([]);
   const [eventos, setEventos] = useState<ExternalEvent[]>([]);
+  const [responsableId, setResponsableId] = useState<string | null>(null);
   const [firma, setFirma] = useState<Firma>(firmaVacia);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -136,7 +138,7 @@ export default function LocalGestorReview() {
       ]);
       const [review, gateData, formatData, expedienteData] = await Promise.all(responses.map((response) => response.json())) as [
         { requirements?: Requirement[]; error?: string }, { gates?: Gate[]; error?: string }, { formats?: Format[]; error?: string },
-        { expediente?: { external_events?: ExternalEvent[] }; error?: string },
+        { expediente?: { external_events?: ExternalEvent[]; gestor_id: string | null }; error?: string },
       ];
       const bodies = [review, gateData, formatData, expedienteData];
       const fallo = responses.findIndex((response) => !response.ok);
@@ -150,6 +152,7 @@ export default function LocalGestorReview() {
       setGates(nextGates);
       setFormats(formatData.formats);
       setEventos(expedienteData.expediente.external_events);
+      setResponsableId(expedienteData.expediente.gestor_id);
       setCargadoId(id);
       setGateSel((current) => current || ETAPAS[gateActual(nextGates) - 1].code);
       setEstadoCarga("listo");
@@ -401,6 +404,7 @@ export default function LocalGestorReview() {
     setGates([]);
     setFormats([]);
     setEventos([]);
+    setResponsableId(null);
     setFirma(firmaVacia());
     setEstadoCarga("cargando");
   }
@@ -568,7 +572,25 @@ export default function LocalGestorReview() {
               </div>
             </div>
           )}
-          {statusGate(etapaSel.code) === "abierto" && (
+          {["G3", "G4", "G5", "G6", "G7"].includes(etapaSel.code) && (
+            <RegistrarEventos
+              key={`${selId}-${etapaSel.code}`}
+              expedienteId={selId}
+              gate={etapaSel.code}
+              abierto={statusGate(etapaSel.code) === "abierto"}
+              responsableActual={responsableId === usuarioId}
+              requirements={requirements}
+              eventos={eventos}
+              ocupado={ocupado}
+              setOcupado={setOcupado}
+              notificar={notificar}
+              refrescar={refrescar}
+              cerrar={cerrarGate}
+              verUiie={() => { setGrupo("U"); setFiltro("todos"); document.getElementById("requisitos-expediente")?.scrollIntoView({ behavior: "smooth" }); }}
+              alReprocesar={() => setGateSel("G1")}
+            />
+          )}
+          {statusGate(etapaSel.code) === "abierto" && !["G3", "G4", "G5", "G6", "G7"].includes(etapaSel.code) && (
             <button
               disabled={ocupado !== null || (etapaSel.code === "G2" && faltantesG2.length > 0)}
               onClick={() => void cerrarGate(etapaSel.code)}
@@ -632,7 +654,7 @@ export default function LocalGestorReview() {
         </Panel>
       </div>
 
-      <Panel title="Requisitos del expediente">
+      <div id="requisitos-expediente"><Panel title="Requisitos del expediente">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex gap-2" role="group" aria-label="Lista de requisitos">
             <SmallButton active={grupo === "R"} onClick={() => { setGrupo("R"); setFiltro("todos"); }}>CFE (R01–R11)</SmallButton>
@@ -735,7 +757,7 @@ export default function LocalGestorReview() {
             );
           })}
         </ul>
-      </Panel>
+      </Panel></div>
 
       <Panel title="Plantillas Word IDC">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
