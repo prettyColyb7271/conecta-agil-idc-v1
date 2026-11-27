@@ -10,6 +10,14 @@ export function gateActual(gates: Gate[]): number {
   return index === -1 ? ETAPAS.length : index + 1;
 }
 
+export function encabezadoGate(gates: Gate[], estado: "cargando" | "error" | "listo"): string {
+  if (estado === "cargando") return "Cargando…";
+  if (estado === "error") return "No se pudo cargar el avance";
+  if (ETAPAS.every((etapa) => gates.some((gate) => gate.gate_code === etapa.code && gate.status === "cerrado"))) return "Expediente cerrado";
+  const actual = gateActual(gates);
+  return `Gate ${actual} · ${ETAPAS[actual - 1].nombre}`;
+}
+
 export function semaforoExpediente(gates: Gate[], requisitos: Requisito[]): { estatus: Estatus; detalle: string } {
   const observados = requisitos.filter((item) => item.status === "observado").length;
   if (observados) return { estatus: "atrasado", detalle: `${observados} con observación` };

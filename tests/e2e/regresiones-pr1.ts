@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { documentosDelCliente, type RequisitoCliente } from "../../lib/portal-cliente";
-import { semaforoExpediente } from "../../lib/semaforo";
+import { encabezadoGate, semaforoExpediente } from "../../lib/semaforo";
+import { ETAPAS } from "../../lib/etapas";
 
 const gates = [{ gate_code: "G1", status: "cerrado" }, { gate_code: "G3", status: "cerrado" }, { gate_code: "G6", status: "abierto" }];
 const requisito = (status: string): RequisitoCliente => ({
@@ -29,5 +30,13 @@ assert.deepEqual(semaforoExpediente(gates, [req("U06"), req("U07")]), { estatus:
 assert.equal(semaforoExpediente(gates, [req("U06", "observado")]).estatus, "atrasado");
 assert.notEqual(semaforoExpediente([{ gate_code: "G1", status: "abierto" }], [req("U06")]).detalle, "Sin faltantes");
 assert.deepEqual(semaforoExpediente(gates, [req("U06", "validado_idc")]), { estatus: "entiempo", detalle: "Sin faltantes" });
+
+const avance = (cerrados: number, status = "abierto") => ETAPAS.map((etapa, index) => ({ gate_code: etapa.code, status: index < cerrados ? "cerrado" : index === cerrados ? status : "bloqueado" }));
+assert.equal(encabezadoGate([], "cargando"), "Cargando…");
+assert.equal(encabezadoGate([], "error"), "No se pudo cargar el avance");
+assert.equal(encabezadoGate(avance(0), "listo"), "Gate 1 · Registro y captura");
+assert.equal(encabezadoGate(avance(4, "bloqueado"), "listo"), "Gate 5 · Oficio resolutivo");
+assert.equal(encabezadoGate(avance(7), "listo"), "Gate 8 · Medidor y alta");
+assert.equal(encabezadoGate(avance(8), "listo"), "Expediente cerrado");
 
 console.log("Regresiones PR #1: portal reutilizados y semáforo OK");

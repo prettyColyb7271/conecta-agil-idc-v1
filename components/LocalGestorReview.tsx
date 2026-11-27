@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Panel, SmallButton } from "@/components/ui";
 import { ETAPAS, REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA, esPostInstalacion } from "@/lib/etapas";
+import { encabezadoGate, gateActual } from "@/lib/semaforo";
 
 type Requirement = {
   requirement_code: string;
@@ -22,6 +23,10 @@ type Expediente = { id: string; folio: string; cliente_nombre: string };
 type Template = { id: string; code: string; version: number; sha256: string; active: number };
 type Format = { document_id: string; document_type: string; status: string; version_number: number; original_filename: string };
 type Aviso = { ok: boolean; text: string };
+
+function gatesCompletos(gates: Gate[] | undefined): gates is Gate[] {
+  return Array.isArray(gates) && gates.length === ETAPAS.length && ETAPAS.every((etapa) => gates.some((gate) => gate.gate_code === etapa.code));
+}
 
 // Semáforo de cada requisito: gris = falta, ámbar = por revisar, rojo = observado, verde = listo, azul = formato.
 const ESTADOS: Record<string, { label: string; color: string; grupo: "pendiente" | "revisar" | "observado" | "listo" }> = {
@@ -94,7 +99,11 @@ export default function LocalGestorReview() {
   const [foco, setFoco] = useState<string | null>(null);
   const [verHistorial, setVerHistorial] = useState(false);
   const [cargadoId, setCargadoId] = useState<string>("");
+  const [estadoCarga, setEstadoCarga] = useState<"cargando" | "error" | "listo">("cargando");
+  const [errorCarga, setErrorCarga] = useState<string>("");
   const filas = useRef<Record<string, HTMLElement | null>>({});
+  const seleccionActual = useRef("");
+  const solicitudDetalle = useRef(0);
 
   const notificar = (next: Aviso) => {
     setAviso(next);
@@ -102,18 +111,39 @@ export default function LocalGestorReview() {
   };
 
   const cargarDetalle = useCallback(async (id: string) => {
-    if (!id) return;
-    const [review, gateData, formatData] = await Promise.all([
-      fetch(`/api/expedientes/${id}/requirements/R01`).then((response) => response.json()) as Promise<{ requirements?: Requirement[] }>,
-      fetch(`/api/expedientes/${id}/gates`).then((response) => response.json()) as Promise<{ gates?: Gate[] }>,
-      fetch(`/api/expedientes/${id}/formats`).then((response) => response.json()) as Promise<{ formats?: Format[] }>,
-    ]);
-    setRequirements(review.requirements ?? []);
-    const nextGates = gateData.gates ?? [];
-    setGates(nextGates);
-    setFormats(formatData.formats ?? []);
-    setCargadoId(id);
-    setGateSel((current) => current || nextGates.find((gate) => gate.status === "abierto")?.gate_code || "G0");
+    if (!id || id !== seleccionActual.current) return;
+    const solicitud = ++solicitudDetalle.current;
+    setEstadoCarga("cargando");
+    setErrorCarga("");
+    try {
+      const responses = await Promise.all([
+        fetch(`/api/expedientes/${id}/requirements/R01`),
+        fetch(`/api/expedientes/${id}/gates`),
+        fetch(`/api/expedientes/${id}/formats`),
+      ]);
+      const [review, gateData, formatData] = await Promise.all(responses.map((response) => response.json())) as [
+        { requirements?: Requirement[]; error?: string }, { gates?: Gate[]; error?: string }, { formats?: Format[]; error?: string },
+      ];
+      const bodies = [review, gateData, formatData];
+      const fallo = responses.findIndex((response) => !response.ok);
+      if (fallo !== -1) throw new Error(bodies[fallo].error ?? "No fue posible consultar el expediente.");
+      if (!Array.isArray(review.requirements) || !Array.isArray(formatData.formats) || !gatesCompletos(gateData.gates)) {
+        throw new Error("La respuesta del expediente está incompleta.");
+      }
+      if (solicitud !== solicitudDetalle.current || id !== seleccionActual.current) return;
+      const nextGates = gateData.gates;
+      setRequirements(review.requirements);
+      setGates(nextGates);
+      setFormats(formatData.formats);
+      setCargadoId(id);
+      setGateSel((current) => current || ETAPAS[gateActual(nextGates) - 1].code);
+      setEstadoCarga("listo");
+    } catch (error) {
+      if (solicitud !== solicitudDetalle.current || id !== seleccionActual.current) return;
+      setCargadoId(id);
+      setEstadoCarga("error");
+      setErrorCarga(error instanceof Error ? error.message : "Error inesperado al consultar el expediente.");
+    }
   }, []);
 
   const cargarPendientes = useCallback(async () => {
@@ -134,6 +164,7 @@ export default function LocalGestorReview() {
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
+    seleccionActual.current = selId;
     const timer = window.setTimeout(() => { void cargarDetalle(selId); }, 0);
     return () => window.clearTimeout(timer);
   }, [selId, cargarDetalle]);
@@ -200,11 +231,17 @@ export default function LocalGestorReview() {
         body: JSON.stringify({ action: "close", gateCode: code }),
       });
       const body = await response.json().catch(() => ({})) as { error?: string; gates?: Gate[] };
+      if (selId !== seleccionActual.current) return;
       notificar(response.ok ? { ok: true, text: `${code} cerrado.` } : { ok: false, text: body.error ?? "No fue posible cerrar el gate." });
       if (response.ok) {
-        const next = body.gates ?? [];
+        if (!gatesCompletos(body.gates)) {
+          notificar({ ok: false, text: "La respuesta del expediente está incompleta." });
+          await cargarDetalle(selId);
+          return;
+        }
+        const next = body.gates;
         setGates(next);
-        setGateSel(next.find((gate) => gate.status === "abierto")?.gate_code ?? code);
+        setGateSel(ETAPAS[gateActual(next) - 1].code);
         await cargarPendientes();
       }
     } finally {
@@ -229,7 +266,7 @@ export default function LocalGestorReview() {
   }
 
   function irAPendiente(item: Pending) {
-    if (item.expedienteId !== selId) { setSelId(item.expedienteId); setGateSel(""); }
+    if (item.expedienteId !== selId) seleccionarExpediente(item.expedienteId);
     if (item.requirementCode) {
       setGrupo(item.requirementCode.startsWith("U") ? "U" : "R");
       setFiltro("todos");
@@ -238,10 +275,24 @@ export default function LocalGestorReview() {
     }
   }
 
+  function seleccionarExpediente(id: string) {
+    seleccionActual.current = id;
+    solicitudDetalle.current += 1;
+    setSelId(id);
+    setGateSel("");
+    setAbierto(null);
+    setForm(null);
+    setRequirements([]);
+    setGates([]);
+    setFormats([]);
+    setEstadoCarga("cargando");
+  }
+
   if (!expedientes.length) return <Panel title="Revisión del expediente"><p className="text-sm">No hay expedientes para revisar.</p></Panel>;
 
   const gateIndex = (code: string) => ETAPAS.findIndex((etapa) => etapa.code === code);
-  const statusGate = (code: string) => gates.find((gate) => gate.gate_code === code)?.status ?? "bloqueado";
+  const avanceEstado = cargadoId === selId ? estadoCarga : "cargando";
+  const statusGate = (code: string) => avanceEstado === "listo" ? gates.find((gate) => gate.gate_code === code)?.status ?? "bloqueado" : "bloqueado";
   const etapaSel = ETAPAS.find((etapa) => etapa.code === gateSel) ?? ETAPAS[0];
   const exige = EXIGE[etapaSel.code] ?? {};
   const g1Cerrado = statusGate("G1") === "cerrado";
@@ -264,7 +315,7 @@ export default function LocalGestorReview() {
             Expediente
             <select
               value={selId}
-              onChange={(event) => { setSelId(event.target.value); setGateSel(""); setAbierto(null); setForm(null); }}
+              onChange={(event) => seleccionarExpediente(event.target.value)}
               className="mt-1 block w-72 max-w-full rounded border border-[#1b3d66] bg-white px-2 py-1.5 text-sm font-normal text-[#0d1f33]"
             >
               {expedientes.map((item) => <option key={item.id} value={item.id}>{item.folio} · {item.cliente_nombre}</option>)}
@@ -272,9 +323,11 @@ export default function LocalGestorReview() {
           </label>
           <p className="text-sm">
             <b>{expediente?.folio}</b> · Gate actual:{" "}
-            <b>{(() => { const code = gates.find((gate) => gate.status === "abierto")?.gate_code; return code ? `Gate ${gateIndex(code) + 1} · ${ETAPAS[gateIndex(code)].nombre}` : "Cerrado"; })()}</b>
+            <b>{encabezadoGate(gates, avanceEstado)}</b>
+            {avanceEstado === "error" && <button type="button" className="ml-2 underline" onClick={() => void cargarDetalle(selId)}>Reintentar</button>}
           </p>
         </div>
+        {avanceEstado === "error" && errorCarga && <p role="alert" className="mt-2 text-sm text-red-800">{errorCarga}</p>}
         {aviso && (
           <p role={aviso.ok ? "status" : "alert"} className={`mt-3 flex items-center gap-2 rounded px-3 py-2 text-sm font-bold ${aviso.ok ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-800"}`}>
             <Punto color={aviso.ok ? "#22c55e" : "#ef4444"} /> {aviso.text}
@@ -283,7 +336,7 @@ export default function LocalGestorReview() {
       </Panel>
 
       {/* Línea de gates interactiva (mismo diseño que el portal del cliente) */}
-      <section aria-label="Gates del expediente" className="rounded-sm bg-[#cfe0f1] px-3 py-4 text-[#0d1f33]">
+      {avanceEstado === "listo" && <section aria-label="Gates del expediente" className="rounded-sm bg-[#cfe0f1] px-3 py-4 text-[#0d1f33]">
         <p className="mb-3 text-center text-xs font-bold">Gates del trámite · haz clic en uno para ver qué exige</p>
         <div className="relative mx-auto max-w-4xl">
           <div className="absolute left-[6%] right-[6%] top-6 hidden h-1.5 bg-[#0d1f33] sm:block" aria-hidden />
@@ -350,7 +403,7 @@ export default function LocalGestorReview() {
             </button>
           )}
         </div>
-      </section>
+      </section>}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel title="Mis pendientes">
