@@ -65,7 +65,7 @@ export type ExpedienteView = {
   created_at: string;
   updated_at: string;
   gates: Array<{ gate_code: string; status: string }>;
-  external_events?: Array<{ event_type: string; event_date: string; description: string; document_id: string | null }>;
+  external_events?: Array<{ event_type: string; event_date: string; description: string; document_id: string | null; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null }>;
   requirements: Array<{ requirement_code: string; name: string; status: string }>;
   assignments: Array<{ user_id: string; display_name: string; assignment_type: string; starts_at: string; ends_at: string | null }>;
 };
@@ -109,7 +109,7 @@ function enrich(row: ExpedienteView): ExpedienteView {
     FROM expediente_assignments ea JOIN users u ON u.id = ea.user_id
     WHERE ea.expediente_id = ? ORDER BY ea.starts_at
   `).all(row.id) as ExpedienteView["assignments"];
-  const externalEvents = database.prepare("SELECT event_type, event_date, description, document_id FROM external_events WHERE expediente_id = ? ORDER BY event_date").all(row.id) as NonNullable<ExpedienteView["external_events"]>;
+  const externalEvents = database.prepare("SELECT event_type, event_date, description, document_id, resultado, vence_at, subgate_requerido, subgate_document_id, medio, solicitud_numero FROM external_events WHERE expediente_id = ? ORDER BY event_date, created_at, rowid").all(row.id) as NonNullable<ExpedienteView["external_events"]>;
   return { ...row, gates: gates.map((item) => ({ ...item })), requirements: requirements.map((item) => ({ ...item })), assignments: assignments.map((item) => ({ ...item })), external_events: externalEvents.map((item) => ({ ...item })) };
 }
 

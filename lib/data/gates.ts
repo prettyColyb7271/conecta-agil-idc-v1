@@ -40,7 +40,7 @@ function gateRows(id: string) {
   `).all(id).map((row) => {
     const item = row as { gate_code: string; status: string };
     if (item.gate_code !== "G4") return row;
-    const event = getDatabase().prepare("SELECT vence_at, resultado FROM external_events WHERE expediente_id = ? AND event_type = 'resolucion_cfe' ORDER BY event_date DESC LIMIT 1").get(id) as { vence_at: string | null; resultado: string | null } | undefined;
+    const event = getDatabase().prepare("SELECT vence_at, resultado FROM external_events WHERE expediente_id = ? AND event_type = 'resolucion_cfe' ORDER BY event_date DESC, created_at DESC, rowid DESC LIMIT 1").get(id) as { vence_at: string | null; resultado: string | null } | undefined;
     if (!event?.vence_at || event.resultado === "no_favorable") return { ...row as object, alert: null };
     const days = Math.ceil((Date.parse(event.vence_at) - Date.now()) / 86400000);
     return { ...row as object, alert: { level: days < 0 ? "roja" : days <= 10 ? "ambar" : null, days, vence_at: event.vence_at } };
@@ -56,6 +56,11 @@ export function assertRequisitosIngreso(id: string): void {
   const rows = getDatabase().prepare("SELECT requirement_code, status FROM expediente_requirements WHERE expediente_id = ? AND requirement_code IN ('R10', 'R11')").all(id) as Array<{ requirement_code: string; status: string }>;
   const missing = REQUISITOS_POST_INSTALACION.filter((code) => !rows.some((row) => row.requirement_code === code && row.status === "validado_idc"));
   if (missing.length) throw new GateConflictError(`Antes de registrar el ingreso a CFE deben validarse: ${missing.join(", ")}.`);
+}
+
+export function marcarIngresoConAcuse(expedienteId: string, documentId: string | undefined, now: string): void {
+  getDatabase().prepare("UPDATE expediente_requirements SET workflow_status = 'ingresado_con_acuse', updated_at = ? WHERE expediente_id = ? AND requirement_code IN ('R01', 'R07')").run(now, expedienteId);
+  if (documentId) getDatabase().prepare("UPDATE documents SET status = 'ingresado_con_acuse', updated_at = ? WHERE id = ?").run(now, documentId);
 }
 
 function validateClose(id: string, gate: GateCode): void {
@@ -92,7 +97,7 @@ function validateClose(id: string, gate: GateCode): void {
     if (!event?.medio || !event.solicitud_numero) throw new GateConflictError("G3 requiere medio y número de solicitud CFE.");
   } else if (gate === "G4") {
     requireGateEvidence(id, "resolucion_cfe");
-    const event = getDatabase().prepare("SELECT vence_at, resultado, subgate_requerido, subgate_document_id FROM external_events WHERE expediente_id = ? AND event_type = 'resolucion_cfe' ORDER BY event_date DESC LIMIT 1").get(id) as { vence_at: string | null; resultado: string | null; subgate_requerido: number; subgate_document_id: string | null } | undefined;
+    const event = getDatabase().prepare("SELECT vence_at, resultado, subgate_requerido, subgate_document_id FROM external_events WHERE expediente_id = ? AND event_type = 'resolucion_cfe' ORDER BY event_date DESC, created_at DESC, rowid DESC LIMIT 1").get(id) as { vence_at: string | null; resultado: string | null; subgate_requerido: number; subgate_document_id: string | null } | undefined;
     if (!event?.vence_at || !event.resultado) throw new GateConflictError("G4 requiere vigencia y resultado del oficio resolutivo.");
     if (event.resultado === "no_favorable") throw new GateConflictError("Un oficio no favorable no permite cerrar G4.");
     if (event.subgate_requerido && !event.subgate_document_id) throw new GateConflictError("G4 requiere la evidencia del estudio o aportación indicado por CFE.");
@@ -121,9 +126,14 @@ function initializeUiieRequirements(id: string): void {
   const database = getDatabase();
   const reuse: Record<string, string> = { U01: "G4", U02: "R11", U03: "R08", U08: "R07", U10: "R03", U11: "R09", U16: "R07" };
   const now = new Date().toISOString();
+  const expected = Array.from({ length: 17 }, (_, index) => `U${String(index + 1).padStart(2, "0")}`);
+  const catalog = database.prepare("SELECT code FROM requirement_catalog WHERE group_code = 'U'").all() as Array<{ code: string }>;
+  if (expected.some((code) => !catalog.some((item) => item.code === code))) throw new GateConflictError("El catálogo UIIE está incompleto; no se puede abrir G6.");
+  const insert = database.prepare("INSERT OR IGNORE INTO expediente_requirements (id, expediente_id, requirement_code, status, updated_at) VALUES (?, ?, ?, 'requerido', ?)");
+  for (const code of expected) insert.run(crypto.randomUUID(), id, code, now);
   for (const [target, source] of Object.entries(reuse)) {
     const sourceRow = source === "G4"
-      ? database.prepare("SELECT document_id FROM external_events WHERE expediente_id = ? AND event_type = 'resolucion_cfe' ORDER BY event_date DESC LIMIT 1").get(id) as { document_id: string | null } | undefined
+      ? database.prepare("SELECT document_id FROM external_events WHERE expediente_id = ? AND event_type = 'resolucion_cfe' ORDER BY event_date DESC, created_at DESC, rowid DESC LIMIT 1").get(id) as { document_id: string | null } | undefined
       : database.prepare("SELECT document_id, version_id, status FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?").get(id, source) as { document_id: string | null; version_id: string | null; status: string } | undefined;
     if (!sourceRow) continue;
     const sourceDetails = sourceRow as { document_id: string | null; version_id?: string | null; status?: string };
@@ -176,14 +186,16 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
       insertEvent();
       getDatabase().prepare("UPDATE gates SET status = 'abierto', closed_by = NULL, closed_at = NULL, reopened_at = ?, reopen_reason = ? WHERE expediente_id = ? AND gate_code = 'G1'").run(now, input.description.trim(), expedienteId);
       getDatabase().prepare("UPDATE gates SET status = 'bloqueado' WHERE expediente_id = ? AND gate_code >= 'G2'").run(expedienteId);
-      getDatabase().prepare("UPDATE expediente_requirements SET status = 'observado', observed_reason = ?, updated_at = ? WHERE expediente_id = ? AND requirement_code LIKE 'R%' AND status NOT IN ('validado_idc', 'no_aplica_justificado')").run(input.description.trim(), now, expedienteId);
+      getDatabase().prepare("UPDATE expediente_requirements SET status = 'observado', observed_reason = ?, validated_by = NULL, validated_at = NULL, workflow_status = NULL, updated_at = ? WHERE expediente_id = ? AND requirement_code LIKE 'R%'").run(input.description.trim(), now, expedienteId);
+      const requirements = getDatabase().prepare("SELECT id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code LIKE 'R%'").all(expedienteId) as Array<{ id: string }>;
+      const observation = getDatabase().prepare("INSERT INTO observations (id, expediente_id, requirement_id, author_id, visibility, body, created_at) VALUES (?, ?, ?, ?, 'cliente', ?, ?)");
+      for (const requirement of requirements) observation.run(crypto.randomUUID(), expedienteId, requirement.id, user.id, input.description.trim(), now);
     });
   } else if (existingSignature) {
     getDatabase().prepare("UPDATE external_events SET event_date = ?, description = ? WHERE id = ?").run(input.eventDate ?? now, input.description.trim(), id);
   } else insertEvent();
   if (input.eventType === "ingreso_acuse") {
-    getDatabase().prepare("UPDATE expediente_requirements SET workflow_status = 'ingresado_con_acuse', updated_at = ? WHERE expediente_id = ? AND requirement_code IN ('R01', 'R07')").run(now, expedienteId);
-    if (input.documentId) getDatabase().prepare("UPDATE documents SET status = 'ingresado_con_acuse', updated_at = ? WHERE id = ?").run(now, input.documentId);
+    marcarIngresoConAcuse(expedienteId, input.documentId, now);
   }
   auditEvent({ actorId: user.id, actorRole: user.role, eventType: existingSignature ? "evidencia_externa_actualizada" : "evidencia_externa_registrada", entityType: "external_event", entityId: id, expedienteId, metadata: { event_type: input.eventType, document_id: input.documentId ?? null } });
   return { id, eventType: input.eventType, reinicioAt: input.eventType === "cfe_incompleto" ? now : undefined };

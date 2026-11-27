@@ -30,7 +30,7 @@ try {
   releaseLock = await acquireRegressionLock(path.join(os.tmpdir(), "conecta-agil-e2e.lock"));
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-agil-e2e-"));
   env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir, MFA_ENCRYPTION_KEY: process.env.MFA_ENCRYPTION_KEY ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", EMAIL_TRANSPORT: "file", EMAIL_FROM: "Conecta Agil <no-reply@example.invalid>" };
-  const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201, 3202];
+  const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201, 3202, 3203];
   if (!Number.isInteger(ports[0]) || ports[0] < 1 || ports[0] > 65535 || ports[0] === 3140 || new Set(ports).size !== ports.length) {
     throw new Error("ISOLATED_PORT debe ser un puerto libre distinto de 3140 y de los usados por las suites.");
   }
@@ -79,6 +79,7 @@ try {
     ["supervisor-a1-firma-ui", ["tests/e2e/supervisor-a1-firma-ui.mjs", root], false],
     ["supervisor-paso7", ["tests/e2e/supervisor-paso7.mjs"], true],
     ["supervisor-flujo-g3-g7", ["tests/e2e/supervisor-flujo-g3-g7.mjs", root], false],
+    ["corrida-ui-g0-g7", ["tests/e2e/corrida-ui-g0-g7.mjs", root], false],
     ["supervisor-seguridad-aislado", ["tests/e2e/supervisor-seguridad-aislado.mjs"], false],
     ["supervisor-seguridad-ataque", ["tests/e2e/supervisor-seguridad-ataque.mjs", root], false],
     ["supervisor-origen-8d", ["tests/e2e/supervisor-origen-8d.mjs", root], false],

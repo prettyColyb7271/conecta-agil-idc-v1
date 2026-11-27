@@ -21,6 +21,8 @@ export async function POST(request: Request, { params }: Params) {
     const evidenceFile = form.get("file");
     if (eventType) {
       if (!(evidenceFile instanceof File)) return Response.json({ error: "eventType y archivo son requeridos." }, { status: 400 });
+      const subgateFile = form.get("subgateFile");
+      if (subgateFile !== null && !(subgateFile instanceof File)) return Response.json({ error: "La evidencia del subgate debe ser un archivo." }, { status: 400 });
       return Response.json({ document: await uploadExternalEvidence(user, id, eventType, evidenceFile, {
         eventDate: String(form.get("eventDate") ?? "") || undefined,
         description: String(form.get("description") ?? ""),
@@ -30,6 +32,7 @@ export async function POST(request: Request, { params }: Params) {
         venceAt: String(form.get("venceAt") ?? "") || undefined,
         resultado: (String(form.get("resultado") ?? "") || undefined) as "favorable" | "condicionado" | "no_favorable" | undefined,
         subgateRequerido: String(form.get("subgateRequerido") ?? "") === "true",
+        subgateFile: subgateFile ?? undefined,
       }) }, { status: 201 });
     }
     const requirementCode = String(form.get("requirementCode") ?? "");

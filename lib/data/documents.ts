@@ -6,7 +6,7 @@ import { getAdapters } from "@/lib/adapters";
 import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { getExpediente, type ScopeUser } from "@/lib/data/expedientes";
-import { assertRequisitosIngreso } from "@/lib/data/gates";
+import { assertRequisitosIngreso, marcarIngresoConAcuse } from "@/lib/data/gates";
 import { esPostInstalacion } from "@/lib/etapas";
 
 export class DocumentValidationError extends Error {
@@ -145,7 +145,7 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
   return { documentId, versionId, versionNumber, sha256: stored.sha256, sizeBytes: stored.sizeBytes, status: sourceVersion ? "escaneo_recibido" : "cargado" };
 }
 
-export async function uploadExternalEvidence(user: AuthUser, expedienteId: string, eventType: string, file: File, event: { eventDate?: string; description: string; medio?: string; solicitudNumero?: string; vigenciaMeses?: number; venceAt?: string; resultado?: "favorable" | "condicionado" | "no_favorable"; subgateRequerido?: boolean }) {
+export async function uploadExternalEvidence(user: AuthUser, expedienteId: string, eventType: string, file: File, event: { eventDate?: string; description: string; medio?: string; solicitudNumero?: string; vigenciaMeses?: number; venceAt?: string; resultado?: "favorable" | "condicionado" | "no_favorable"; subgateRequerido?: boolean; subgateFile?: File }) {
   if (!isIdc(user)) throw new Error("FORBIDDEN");
   const expediente = assertVisible(user, expedienteId);
   assertOpenExpediente(expedienteId);
@@ -153,35 +153,57 @@ export async function uploadExternalEvidence(user: AuthUser, expedienteId: strin
   if (!event.description?.trim()) throw new DocumentValidationError("La descripción es obligatoria.");
   if (eventType === "ingreso_acuse" && (!event.medio || !["ventanilla", "portal"].includes(event.medio) || !event.solicitudNumero)) throw new DocumentValidationError("El acuse requiere medio y número de solicitud CFE.");
   if (eventType === "resolucion_cfe" && ((!event.venceAt && !event.vigenciaMeses) || !event.resultado)) throw new DocumentValidationError("El oficio resolutivo requiere vigencia y resultado.");
+  if (event.subgateFile && (eventType !== "resolucion_cfe" || !event.subgateRequerido)) throw new DocumentValidationError("La evidencia del subgate solo corresponde a un oficio que lo requiere.");
   const definition = allowedTypes.get(file.type);
   if (!definition) throw new DocumentValidationError("Solo se permiten archivos PDF, JPG o PNG.");
   if (file.size > MAX_FILE_BYTES) throw new DocumentTooLargeError("El archivo excede 20 MB.");
   const bytes = Buffer.from(await file.arrayBuffer());
   if (!definition.magic(bytes)) throw new DocumentValidationError("El contenido no coincide con un PDF, JPG o PNG válido.");
+  const subgateDefinition = event.subgateFile ? allowedTypes.get(event.subgateFile.type) : undefined;
+  if (event.subgateFile && !subgateDefinition) throw new DocumentValidationError("Solo se permiten archivos PDF, JPG o PNG.");
+  if (event.subgateFile && event.subgateFile.size > MAX_FILE_BYTES) throw new DocumentTooLargeError("El archivo excede 20 MB.");
+  const subgateBytes = event.subgateFile ? Buffer.from(await event.subgateFile.arrayBuffer()) : undefined;
+  if (subgateBytes && subgateDefinition && !subgateDefinition.magic(subgateBytes)) throw new DocumentValidationError("El contenido no coincide con un PDF, JPG o PNG válido.");
   const database = getDatabase();
   const documentId = crypto.randomUUID();
   const versionId = crypto.randomUUID();
   const storageKey = `${documentId}/${versionId}.${definition.extension}`;
   const adapters = await getAdapters();
-  const stored = await adapters.storage.put(bytes, { storageKey, filename: saneFilename(file.name), mimeType: file.type });
   const now = new Date().toISOString();
   const eventDate = event.eventDate ?? now;
   const expiresAt = event.venceAt ?? (event.vigenciaMeses && eventType === "resolucion_cfe" ? new Date(new Date(eventDate).getTime() + event.vigenciaMeses * 30 * 86400000).toISOString() : null);
   let eventId = "";
+  const storedKeys: string[] = [];
   try {
+    const stored = await adapters.storage.put(bytes, { storageKey, filename: saneFilename(file.name), mimeType: file.type });
+    storedKeys.push(storageKey);
+    const subgateDocumentId = subgateBytes && subgateDefinition && event.subgateFile ? crypto.randomUUID() : null;
+    const subgateVersionId = subgateDocumentId ? crypto.randomUUID() : null;
+    const subgateKey = subgateDocumentId && subgateVersionId && subgateDefinition ? `${subgateDocumentId}/${subgateVersionId}.${subgateDefinition.extension}` : null;
+    const subgateStored = subgateKey && subgateBytes && event.subgateFile
+      ? await adapters.storage.put(subgateBytes, { storageKey: subgateKey, filename: saneFilename(event.subgateFile.name), mimeType: event.subgateFile.type })
+      : null;
+    if (subgateKey && subgateStored) storedKeys.push(subgateKey);
     withTransaction(() => {
       if (eventType === "ingreso_acuse") assertRequisitosIngreso(expedienteId);
       database.prepare("INSERT INTO documents (id, expediente_id, requirement_id, document_type, source, sensitivity, status, created_by, created_at, updated_at) VALUES (?, ?, NULL, ?, 'externo', 'normal', 'cargado', ?, ?, ?)").run(documentId, expedienteId, `evidencia:${eventType}`, user.id, now, now);
       database.prepare("INSERT INTO document_versions (id, document_id, version_number, storage_key, original_filename, mime_type, size_bytes, sha256, author_id, origin, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, 'carga', ?)").run(versionId, documentId, stored.storageKey, stored.filename, stored.mimeType, stored.sizeBytes, stored.sha256, user.id, now);
+      if (subgateDocumentId && subgateVersionId && subgateStored) {
+        database.prepare("INSERT INTO documents (id, expediente_id, requirement_id, document_type, source, sensitivity, status, created_by, created_at, updated_at) VALUES (?, ?, NULL, 'evidencia:subgate_cfe', 'externo', 'normal', 'cargado', ?, ?, ?)").run(subgateDocumentId, expedienteId, user.id, now, now);
+        database.prepare("INSERT INTO document_versions (id, document_id, version_number, storage_key, original_filename, mime_type, size_bytes, sha256, author_id, origin, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, 'carga', ?)").run(subgateVersionId, subgateDocumentId, subgateStored.storageKey, subgateStored.filename, subgateStored.mimeType, subgateStored.sizeBytes, subgateStored.sha256, user.id, now);
+      }
       eventId = crypto.randomUUID();
-      database.prepare("INSERT INTO external_events (id, expediente_id, event_type, event_date, description, document_id, created_by, created_at, medio, solicitud_numero, vigencia_meses, vence_at, resultado, subgate_requerido, reinicio_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(eventId, expedienteId, eventType, eventDate, event.description.trim(), documentId, user.id, now, event.medio ?? null, event.solicitudNumero ?? null, event.vigenciaMeses ?? null, expiresAt, event.resultado ?? null, event.subgateRequerido ? 1 : 0, null);
+      database.prepare("INSERT INTO external_events (id, expediente_id, event_type, event_date, description, document_id, created_by, created_at, medio, solicitud_numero, vigencia_meses, vence_at, resultado, subgate_requerido, subgate_document_id, reinicio_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(eventId, expedienteId, eventType, eventDate, event.description.trim(), documentId, user.id, now, event.medio ?? null, event.solicitudNumero ?? null, event.vigenciaMeses ?? null, expiresAt, event.resultado ?? null, event.subgateRequerido ? 1 : 0, subgateDocumentId, null);
+      if (eventType === "ingreso_acuse") marcarIngresoConAcuse(expedienteId, documentId, now);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "evidencia_externa_registrada", entityType: "external_event", entityId: eventId, expedienteId, metadata: { event_type: eventType, document_id: documentId, sha256: stored.sha256 } });
     });
+    return { documentId, versionId, eventId, eventType, eventDate, sha256: stored.sha256, sizeBytes: stored.sizeBytes, folio: expediente.folio };
   } catch (error) {
-    await adapters.storage.remove(storageKey).catch(() => undefined);
+    for (const key of storedKeys) {
+      try { await adapters.storage.remove(key); } catch (cleanupError) { console.error("No se pudo retirar la evidencia temporal:", cleanupError); }
+    }
     throw error;
   }
-  return { documentId, versionId, eventId, eventType, eventDate, sha256: stored.sha256, sizeBytes: stored.sizeBytes, folio: expediente.folio };
 }
 
 export function verifyScannedDocument(user: AuthUser, expedienteId: string, requirementCode: string, versionId: string) {
