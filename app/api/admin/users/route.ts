@@ -55,6 +55,10 @@ export async function POST(request: Request) {
     if (!body.userId || !body.action) return NextResponse.json({ error: "Faltan datos." }, { status: 400 });
     const target = database.prepare("SELECT id, role, status FROM users WHERE id = ? AND role != 'admin_seguridad'").get(body.userId) as { id: string; role: string; status: string } | undefined;
     if (!target) return NextResponse.json({ error: "Usuario no disponible." }, { status: 404 });
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (body.action === "disable_mfa" && [...reason].length < 5) {
+      return NextResponse.json({ error: "El motivo debe tener al menos 5 caracteres." }, { status: 400 });
+    }
     let returnValue: { ok: boolean; setupUrl?: string; expiresAt?: string; unassignedCount?: number } | undefined;
     withTransaction(() => {
       const now = new Date().toISOString();
@@ -92,10 +96,9 @@ export async function POST(request: Request) {
         const setup = createPasswordSetupToken(target.id, actor.id);
         returnValue = { ok: true, setupUrl: new URL(`/definir-contrasena?token=${encodeURIComponent(setup.token)}`, request.url).toString(), expiresAt: setup.expiresAt };
       } else if (body.action === "disable_mfa") {
-        if (!body.reason?.trim()) throw new Error("MFA_REASON_REQUIRED");
         disableUserMfa(target.id);
         database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);
-        auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "mfa_desvinculado_admin", entityType: "user_mfa", entityId: target.id, metadata: { reason: body.reason.trim() } });
+        auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "mfa_desvinculado_admin", entityType: "user_mfa", entityId: target.id, metadata: { reason } });
         returnValue = { ok: true };
       } else {
         database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(now, target.id);

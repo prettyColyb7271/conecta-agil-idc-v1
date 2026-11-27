@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { assertSameOrigin, auditEvent, consumeMfaChallenge, createSession, deleteMfaChallenge, MFA_CHALLENGE_COOKIE, mfaRequiredForRole, sessionCookieOptions, verifyUserMfa, ROLE_COOKIE, SESSION_COOKIE, MUST_CHANGE_COOKIE } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, consumeMfaChallenge, createSession, deleteMfaChallenge, MFA_CHALLENGE_COOKIE, sessionCookieOptions, verifyUserMfa, ROLE_COOKIE, SESSION_COOKIE, MUST_CHANGE_COOKIE } from "@/lib/auth";
 import { getAppMode } from "@/lib/adapters/config";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
+import type { Role } from "@/data/mock";
 
 export async function POST(request: Request) {
   try {
@@ -13,8 +14,8 @@ export async function POST(request: Request) {
     if (!token || !body.code) return NextResponse.json({ error: "Código MFA requerido." }, { status: 401 });
     const challenge = consumeMfaChallenge(token);
     if (!challenge) return NextResponse.json({ error: "Desafío MFA inválido o vencido." }, { status: 401 });
-    const user = getDatabase().prepare("SELECT id, email, display_name, role, status, must_change_password FROM users WHERE id = ?").get(challenge.userId) as { id: string; email: string; display_name: string; role: Parameters<typeof mfaRequiredForRole>[0]; status: string; must_change_password: number } | undefined;
-    if (!user || user.status !== "activo" || !mfaRequiredForRole(user.role) || !verifyUserMfa(user.id, body.code.trim())) {
+    const user = getDatabase().prepare("SELECT id, email, display_name, role, status, must_change_password FROM users WHERE id = ?").get(challenge.userId) as { id: string; email: string; display_name: string; role: Role; status: string; must_change_password: number } | undefined;
+    if (!user || user.status !== "activo" || !verifyUserMfa(user.id, body.code.trim())) {
       auditEvent({ actorId: user?.id, actorRole: user?.role, eventType: "mfa_fallido", entityType: "auth", entityId: user?.id, metadata: { user_agent: request.headers.get("user-agent") ?? null } });
       return NextResponse.json({ error: "Código MFA inválido." }, { status: 401 });
     }

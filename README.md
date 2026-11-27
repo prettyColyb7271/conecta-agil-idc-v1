@@ -80,9 +80,10 @@ $env:APP_MODE = 'local'
 $env:NEXT_PUBLIC_MODO = 'local'
 npm install
 npm run db:migrate
-npm run db:seed
 npm run dev
 ```
+
+`db:seed` es solo para bases de pruebas aisladas, nunca para la base real.
 
 Para la compilación local en el puerto 3140:
 
@@ -90,8 +91,10 @@ Para la compilación local en el puerto 3140:
 $env:APP_MODE = 'local'
 $env:NEXT_PUBLIC_MODO = 'local'
 npm run build
-npm run start -- -p 3140
+npm run start:local
 ```
+
+No se usa `-H 0.0.0.0`: Next escucha en las interfaces disponibles y esa opción altera la dirección que el servidor usa para validar el origen. Para un túnel, configura explícitamente su origen en `ALLOWED_ORIGINS`.
 
 Health check:
 

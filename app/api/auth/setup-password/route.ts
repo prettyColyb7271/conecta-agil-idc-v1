@@ -38,19 +38,22 @@ export async function POST(request: Request) {
         `SELECT id, user_id, expires_at, used_at FROM password_setup_tokens
          WHERE token_hash = ?`,
       ).get(hashToken(token)) as { id: string; user_id: string; expires_at: string; used_at: string | null } | undefined;
-      if (!row || row.used_at || Date.parse(row.expires_at) <= now.getTime()) throw new Error("INVALID_SETUP_TOKEN");
-      const user = database.prepare("SELECT id FROM users WHERE id = ? AND role = 'coordinador_idc' AND status = 'activo'").get(row.user_id);
+      const expiresAt = row ? Date.parse(row.expires_at) : NaN;
+      if (!row || row.used_at || !Number.isFinite(expiresAt) || expiresAt <= now.getTime()) throw new Error("INVALID_SETUP_TOKEN");
+      const user = database.prepare("SELECT id, role FROM users WHERE id = ? AND role IN ('cliente', 'coordinador_idc') AND status = 'activo'").get(row.user_id) as { id: string; role: "cliente" | "coordinador_idc" } | undefined;
       if (!user) throw new Error("INVALID_SETUP_TOKEN");
-      database.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND role = 'coordinador_idc' AND status = 'activo'").run(hashPassword(newPassword), nowIso, row.user_id);
+      database.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND role IN ('cliente', 'coordinador_idc') AND status = 'activo'").run(hashPassword(newPassword), nowIso, row.user_id);
       database.prepare("UPDATE password_setup_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL").run(nowIso, row.id);
       database.prepare("UPDATE password_setup_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL").run(nowIso, row.user_id);
       database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(nowIso, row.user_id);
-      auditEvent({ actorId: row.user_id, actorRole: "coordinador_idc", eventType: "definicion_contrasena_enlace", entityType: "user", entityId: row.user_id });
+      auditEvent({ actorId: row.user_id, actorRole: user.role, eventType: "definicion_contrasena_enlace", entityType: "user", entityId: row.user_id });
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Response) return error;
     if (error instanceof RequestInputError) return NextResponse.json({ error: GENERIC_ERROR }, { status: 400 });
-    return NextResponse.json({ error: GENERIC_ERROR }, { status: 400 });
+    if (error instanceof Error && error.message === "INVALID_SETUP_TOKEN") return NextResponse.json({ error: GENERIC_ERROR }, { status: 400 });
+    console.error("Error al definir contraseña mediante enlace.", error);
+    return NextResponse.json({ error: "No fue posible definir la contraseña." }, { status: 500 });
   }
 }

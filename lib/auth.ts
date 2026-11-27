@@ -251,7 +251,27 @@ export function createPasswordSetupToken(userId: string, createdBy: string): { t
 
 export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get("origin");
-  if (!origin || origin !== new URL(request.url).origin) {
+  if (!origin) {
+    throw new Response(JSON.stringify({ error: "Solicitud no autorizada." }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const url = new URL(request.url);
+  const host = request.headers.get("host");
+  const configured = [
+    ...(process.env.PUBLIC_BASE_URL?.trim() ? [{ value: process.env.PUBLIC_BASE_URL.trim(), base: true }] : []),
+    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean).map((value) => ({ value, base: false })),
+  ].map(({ value, base }) => {
+    const configuredUrl = new URL(value);
+    if (!["http:", "https:"].includes(configuredUrl.protocol) || configuredUrl.username || configuredUrl.password ||
+        (!base && (configuredUrl.pathname !== "/" || configuredUrl.search || configuredUrl.hash))) {
+      throw new Error("Origen configurado inválido.");
+    }
+    return configuredUrl.origin;
+  });
+  const allowed = [url.origin, ...(host ? [`${url.protocol}//${host}`] : []), ...configured];
+  if (!allowed.includes(origin)) {
     throw new Response(JSON.stringify({ error: "Solicitud no autorizada." }), {
       status: 403,
       headers: { "content-type": "application/json" },
@@ -297,9 +317,7 @@ export function withTransaction<T>(work: () => T): T {
   }
 }
 
-export async function getCurrentUser(): Promise<AuthUser | null> {
-  await connection();
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+export function getUserFromSessionToken(token: string | undefined): AuthUser | null {
   if (!token) return null;
   if (getAppMode() !== "local") return null;
   const row = getDatabase().prepare(`
@@ -324,6 +342,11 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     sessionId: row.session_id,
     mustChangePassword: row.must_change_password === 1,
   };
+}
+
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  await connection();
+  return getUserFromSessionToken((await cookies()).get(SESSION_COOKIE)?.value);
 }
 
 export async function requireRole(role: Role, options: { allowPasswordChange?: boolean; allowMfaSetup?: boolean } = {}): Promise<AuthUser | null> {

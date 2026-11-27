@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import net from "node:net";
 
 const root = process.cwd();
 const port = process.env.ISOLATED_PORT ?? "3199";
@@ -14,6 +15,17 @@ function runScript(script) {
 }
 
 try {
+  const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201];
+  if (!Number.isInteger(ports[0]) || ports[0] < 1 || ports[0] > 65535 || ports[0] === 3140 || new Set(ports).size !== ports.length) {
+    throw new Error("ISOLATED_PORT debe ser un puerto libre distinto de 3140 y de los usados por las suites.");
+  }
+  for (const candidate of ports) {
+    await new Promise((resolve, reject) => {
+      const probe = net.createServer();
+      probe.once("error", () => reject(new Error(`Puerto de pruebas ${candidate} no disponible.`)));
+      probe.listen(candidate, "::", () => probe.close(resolve));
+    });
+  }
   runScript("tests/e2e/regresiones-pr1.ts");
   runScript("tests/e2e/migration-004-with-data.mjs");
   runScript("scripts/db-migrate.ts");
@@ -54,6 +66,12 @@ try {
   const seguridad = spawn(process.execPath, ["tests/e2e/supervisor-seguridad-aislado.mjs"], { cwd: root, env, stdio: "inherit" });
   const seguridadCode = await new Promise((resolve) => seguridad.on("exit", resolve));
   if (seguridadCode !== 0) process.exitCode = seguridadCode ?? 1;
+  const ataque = spawn(process.execPath, ["tests/e2e/supervisor-seguridad-ataque.mjs", root], { cwd: root, env, stdio: "inherit" });
+  const ataqueCode = await new Promise((resolve) => ataque.on("exit", resolve));
+  if (ataqueCode !== 0) process.exitCode = ataqueCode ?? 1;
+  const origen = spawn(process.execPath, ["tests/e2e/supervisor-origen-8d.mjs", root], { cwd: root, env, stdio: "inherit" });
+  const origenCode = await new Promise((resolve) => origen.on("exit", resolve));
+  if (origenCode !== 0) process.exitCode = origenCode ?? 1;
 } finally {
   if (server && !server.killed) {
     server.kill();

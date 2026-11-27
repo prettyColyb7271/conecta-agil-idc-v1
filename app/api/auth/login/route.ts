@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
-import { assertSameOrigin, auditEvent, createMfaChallenge, createSession, MFA_CHALLENGE_COOKIE, MUST_CHANGE_COOKIE, mfaEnabled, mfaRequiredForRole, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, createMfaChallenge, createSession, MFA_CHALLENGE_COOKIE, MUST_CHANGE_COOKIE, mfaEnabled, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import type { Role } from "@/data/mock";
 import { readJson, RequestInputError } from "@/lib/http";
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     if (user.status === "bloqueado") return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 403 });
 
     failures.delete(email);
-    if (mfaEnabled(user.id) && mfaRequiredForRole(user.role)) {
+    if (mfaEnabled(user.id)) {
       const challenge = createMfaChallenge(user.id);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "mfa_desafio", entityType: "auth", entityId: user.id, metadata: { ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
       const response = NextResponse.json({ mfaRequired: true });
