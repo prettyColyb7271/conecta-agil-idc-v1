@@ -147,11 +147,9 @@ La regresión aislada cubre:
 - flujo G0-G2 y flujo completo G3-G7;
 - evidencias externas, alertas de vigencia, U01-U17 y cierre de expediente.
 
-La suite adversarial adicional está en
-`tests/e2e/supervisor-seguridad-ataque.mjs`. Es una prueba independiente con
-datos generados en memoria; todavía no forma parte de
-`test:e2e:isolated` y debe corregirse o actualizarse antes de convertirla en
-un requisito de CI.
+La suite adversarial `tests/e2e/supervisor-seguridad-ataque.mjs` forma parte de
+`test:e2e:isolated`; usa datos ficticios aislados y devuelve código distinto de
+cero si falla alguna comprobación.
 
 ## Plan de Zoho
 
@@ -192,7 +190,7 @@ configuradas.
   umbrales de potencia y demás pendientes de `README-DEMO-2.md`.
 - Definir dominio de correo verificado, política de almacenamiento y
   despliegue productivo.
-- Revisar y dejar verde la prueba adversarial antes de incorporarla a CI.
+- Incorporar la regresión aislada a CI cuando se configure el flujo de CI.
 
 ## Reglas de datos
 

@@ -22,9 +22,12 @@ export default function MfaSetup() {
 
   async function start() {
     const response = await fetch("/api/auth/mfa", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "begin" }) });
-    const data = await response.json() as MfaState & { error?: string };
-    if (!response.ok) setMessage(data.error ?? "No se pudo iniciar MFA.");
-    else setState(data);
+    const data = await response.json() as { secret?: string; otpauthUri?: string; error?: string };
+    if (!response.ok || !data.secret || !data.otpauthUri) setMessage(data.error ?? "No se pudo iniciar MFA.");
+    else {
+      setState({ enabled: false, setup: { secret: data.secret, otpauthUri: data.otpauthUri } });
+      setMessage("");
+    }
   }
   async function confirm() {
     const response = await fetch("/api/auth/mfa", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "confirm", code }) });
@@ -39,9 +42,10 @@ export default function MfaSetup() {
     {state.enabled ? <p className="font-semibold text-green-700">MFA activo.</p> : <>
       {!state.setup && <button className="rounded bg-blue-700 px-4 py-2 text-white" onClick={start}>Iniciar vinculación</button>}
       {state.setup && <section className="space-y-2 rounded border p-4">
-        <p>Escanea esta URI en tu aplicación TOTP o copia el secreto:</p>
-        <code className="block break-all text-sm">{state.setup.otpauthUri}</code>
+        <p>Agrega una cuenta manualmente en tu aplicación Authenticator, selecciona código basado en tiempo e introduce este secreto:</p>
         <code className="block font-bold">{state.setup.secret}</code>
+        <p>URI para aplicaciones compatibles:</p>
+        <code className="block break-all text-sm">{state.setup.otpauthUri}</code>
         <input className="rounded border p-2" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Código de 6 dígitos" />
         <button className="rounded bg-blue-700 px-4 py-2 text-white" onClick={confirm}>Confirmar MFA</button>
       </section>}
