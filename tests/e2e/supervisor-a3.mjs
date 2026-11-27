@@ -84,10 +84,14 @@ try {
   const endpoint = `/api/expedientes/${expediente.id}`;
   const managerPage = await gestor.get("/gestor");
   const clientPage = await cliente.get("/portal");
-  const redBanner = (html) => html.includes("Vence en 5 días") &&
+  const fechaLimite = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(expires);
+  const redBanner = (html) => html.includes("vence en 5 días") &&
     /role="alert" class="[^"]*border-red-500 bg-red-50 text-red-900/.test(html);
   ok("banner rojo de oficio a 5 días para Gestor IDC", redBanner(managerPage.text));
   ok("banner rojo de oficio a 5 días para cliente", redBanner(clientPage.text));
+  ok("el Gestor ve oficio CFE y fecha en dd/mm/aaaa", managerPage.text.includes(`Oficio CFE vence en 5 días · ${fechaLimite}`));
+  ok("el cliente ve el contexto del contrato y fecha en dd/mm/aaaa", clientPage.text.includes(`El oficio resolutivo de CFE vence en 5 días (${fechaLimite}). Antes de esa fecha hay que firmar el contrato.`));
+  ok("el portal local no presenta las metas ilustrativas del anteproyecto", !clientPage.text.includes("90%") && !clientPage.text.includes("4.5"));
   ok("el tablero local muestra indicadores reales, no la línea base ilustrativa", managerPage.text.includes("Indicadores del reto (datos reales)") &&
     managerPage.text.includes("Expedientes por Gate") && !managerPage.text.includes("Semanas a energización"));
   ok("los tiempos sin acuse ni alta muestran que aún no hay datos", managerPage.text.includes("Aún no hay datos"));
@@ -118,13 +122,14 @@ try {
   database = null;
   const closedGateManagerPage = await gestor.get("/gestor");
   const closedGateClientPage = await cliente.get("/portal");
-  ok("el banner desaparece al cerrar Gate 6", !closedGateManagerPage.text.includes("Vence en 5 días") && !closedGateClientPage.text.includes("Vence en 5 días"));
+  ok("el banner desaparece al cerrar Gate 6", !closedGateManagerPage.text.includes("Oficio CFE vence en 5 días") &&
+    !closedGateClientPage.text.includes("El oficio resolutivo de CFE vence en 5 días"));
 } finally {
   database?.close();
   server?.kill();
   await new Promise((resolve) => setTimeout(resolve, 500));
   fs.rmSync(dataDir, { recursive: true, force: true });
-  console.log(`\nRESULTADO A3: ${pass} ✅ / ${fail} ❌`);
+  console.log(`\nRESULTADO: ${pass} ✅ / ${fail} ❌`);
   if (failures.length) console.log(" - " + failures.join("\n - "));
   if (fail) process.exitCode = 1;
 }

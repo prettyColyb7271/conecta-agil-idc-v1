@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { etiquetaGate, traducirGateMensaje } from "@/lib/gate-display";
-import { sumarMesesCalendario } from "@/lib/fechas";
+import { formatoFecha, sumarMesesCalendario } from "@/lib/fechas";
 
 type Requirement = { requirement_code: string; name: string; status: string; version_id: string | null };
 type Evento = {
@@ -64,7 +64,7 @@ function Formulario({ tipo, expedienteId, ocupado, setOcupado, notificar, refres
   const [solicitud, setSolicitud] = useState("");
   const [resultado, setResultado] = useState("favorable");
   const [subgate, setSubgate] = useState<File | null>(null);
-  const limite = fecha ? sumarMesesCalendario(`${fecha}T00:00:00.000Z`, 2).toISOString().slice(0, 10) : "";
+  const limite = fecha ? formatoFecha(sumarMesesCalendario(`${fecha}T00:00:00.000Z`, 2)) : "";
 
   async function registrar() {
     if (!archivo) return;
@@ -170,7 +170,7 @@ export default function RegistrarEventos(props: Props) {
         const registrado = tipo === "ingreso_acuse" ? eventos.filter((item) => item.event_type === tipo && item.sequence > Math.max(0, ...eventos.filter((event) => event.event_type === "cfe_incompleto").map((event) => event.sequence))).sort((a, b) => b.sequence - a.sequence)[0] : ultimo(eventos, tipo);
         return <div key={tipo} className="space-y-1">
           {registrado?.document_id && <p className="text-xs">✓ {LABELS[tipo]} registrado · <a className="underline" href={`/api/documents/${registrado.document_id}`}>Ver PDF</a></p>}
-          {tipo === "resolucion_cfe" && registrado && <div className="text-xs">Resultado: {registrado.resultado ?? "sin registrar"} · Fecha límite: {registrado.vence_at?.slice(0, 10) ?? "sin registrar"}{registrado.subgate_document_id && <> · <a className="underline" href={`/api/documents/${registrado.subgate_document_id}`}>Ver subgate</a></>}</div>}
+          {tipo === "resolucion_cfe" && registrado && <div className="text-xs">Resultado: {registrado.resultado ?? "sin registrar"} · Fecha límite: {registrado.vence_at ? formatoFecha(registrado.vence_at) : "sin registrar"}{registrado.subgate_document_id && <> · <a className="underline" href={`/api/documents/${registrado.subgate_document_id}`}>Ver subgate</a></>}</div>}
           {abierto && (!registrado || (tipo === "resolucion_cfe" && otroOficio)) && <Formulario key={`${expedienteId}-${tipo}`} tipo={tipo} expedienteId={expedienteId} ocupado={ocupado} setOcupado={setOcupado} notificar={notificar} refrescar={refrescar} alTerminar={() => setOtroOficio(false)} />}
           {abierto && tipo === "resolucion_cfe" && registrado && !otroOficio && <button type="button" onClick={() => setOtroOficio(true)} className="text-xs underline">Registrar otro oficio</button>}
         </div>;

@@ -1,3 +1,5 @@
+import { formatoFecha } from "./fechas";
+
 type Gate = { gate_code: string; status: string };
 type EventoOficio = { event_type: string; event_date?: string; sequence?: number; resultado: string | null; vence_at: string | null };
 
@@ -17,6 +19,18 @@ export function diasHastaFecha(fecha: string, hoy = new Date()): number {
 
 export function nivelAlertaOficio(diasRestantes: number): AlertaVigenciaOficio["nivel"] {
   return diasRestantes <= 10 ? "roja" : "informativa";
+}
+
+export function textoAlertaVigenciaOficio(alerta: AlertaVigenciaOficio, esGestor = false): string {
+  const fecha = formatoFecha(alerta.venceAt);
+  if (esGestor) {
+    return alerta.diasRestantes < 0
+      ? `Oficio CFE vencido hace ${Math.abs(alerta.diasRestantes)} días · ${fecha}`
+      : `Oficio CFE vence en ${alerta.diasRestantes} días · ${fecha}`;
+  }
+  return alerta.diasRestantes < 0
+    ? `El oficio resolutivo de CFE venció hace ${Math.abs(alerta.diasRestantes)} días (${fecha}). Tu Gestor IDC te indicará los siguientes pasos.`
+    : `El oficio resolutivo de CFE vence en ${alerta.diasRestantes} días (${fecha}). Antes de esa fecha hay que firmar el contrato.`;
 }
 
 export function alertaVigenciaOficio(gates: Gate[], eventos: EventoOficio[], hoy = new Date()): AlertaVigenciaOficio | null {

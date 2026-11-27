@@ -15,6 +15,7 @@ type Props = {
   notificaciones?: Aviso[];
   pendientes?: Aviso[];
   procesos?: Proceso[];
+  modoDemo?: boolean;
   // Contenido extra bajo el encabezado (por ejemplo, el aviso de privacidad en modo local).
   extra?: ReactNode;
 };
@@ -25,6 +26,7 @@ export default function PortalInicio({
   notificaciones = notificacionesDemo,
   pendientes = pendientesDemo,
   procesos = procesosDemo,
+  modoDemo = true,
   extra,
 }: Props) {
   const router = useRouter();
@@ -36,27 +38,32 @@ export default function PortalInicio({
   return (
     <>
       {/* Expediente + indicadores */}
-      <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_3fr]">
+      <div className={modoDemo ? "grid gap-3 lg:grid-cols-[minmax(220px,1fr)_3fr]" : "grid gap-3"}>
         <Panel title="Mi expediente">
           <p className="text-sm"><b>Folio:</b> {folio}</p>
           <p className="mt-2 text-sm"><b>Tipo de Trámite:</b></p>
           <p className="text-sm">{tramite}</p>
         </Panel>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          {expedienteDemo.kpis.map((k) => (
-            <div key={k.titulo} className="rounded-xl border-2 bg-white p-3 text-[#0d1f33]" style={{ borderColor: k.color }}>
-              <div className="flex items-center gap-2">
-                <span className="h-4 w-4 rounded-full" style={{ background: k.color }} aria-hidden />
-                <p className="text-sm font-bold leading-tight">{k.titulo}</p>
-              </div>
-              <div className="mt-2 flex items-end gap-2">
-                <span className="text-4xl font-extrabold">{k.valor}</span>
-                <span className="pb-1 text-[11px] leading-tight text-slate-500">{k.nota}</span>
-              </div>
+        {modoDemo && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-bold">Metas del proyecto</h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {expedienteDemo.kpis.map((k) => (
+                <div key={k.titulo} className="rounded-xl border-2 bg-white p-3 text-[#0d1f33]" style={{ borderColor: k.color }}>
+                  <div className="flex items-center gap-2">
+                    <span className="h-4 w-4 rounded-full" style={{ background: k.color }} aria-hidden />
+                    <p className="text-sm font-bold leading-tight">{k.titulo}</p>
+                  </div>
+                  <div className="mt-2 flex items-end gap-2">
+                    <span className="text-4xl font-extrabold">Meta: {k.valor}</span>
+                    <span className="pb-1 text-[11px] leading-tight text-slate-500">{k.nota}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
       {extra}

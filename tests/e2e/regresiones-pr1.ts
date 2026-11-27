@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { documentosDelCliente, type RequisitoCliente } from "../../lib/portal-cliente";
 import { encabezadoGate, semaforoExpediente } from "../../lib/semaforo";
 import { ETAPAS } from "../../lib/etapas";
-import { sumarMesesCalendario } from "../../lib/fechas";
+import { formatoFecha, sumarMesesCalendario } from "../../lib/fechas";
 import { etiquetaGate, traducirGateMensaje } from "../../lib/gate-display";
-import { alertaVigenciaOficio, diasHastaFecha, nivelAlertaOficio } from "../../lib/vigencia-oficio";
+import { alertaVigenciaOficio, diasHastaFecha, nivelAlertaOficio, textoAlertaVigenciaOficio } from "../../lib/vigencia-oficio";
 
 const gates = [{ gate_code: "G1", status: "cerrado" }, { gate_code: "G3", status: "cerrado" }, { gate_code: "G6", status: "abierto" }];
 const requisito = (status: string): RequisitoCliente => ({
@@ -45,6 +45,8 @@ assert.equal(encabezadoGate(avance(8), "listo"), "Expediente cerrado");
 assert.equal(sumarMesesCalendario("2026-01-31T12:30:00.000Z", 1).toISOString(), "2026-02-28T12:30:00.000Z");
 assert.equal(sumarMesesCalendario("2024-01-31T00:00:00.000Z", 1).toISOString(), "2024-02-29T00:00:00.000Z");
 assert.equal(sumarMesesCalendario("2024-02-29T00:00:00.000Z", 12).toISOString(), "2025-02-28T00:00:00.000Z");
+assert.equal(formatoFecha("2026-12-02T00:00:00.000Z"), "02/12/2026");
+assert.equal(formatoFecha("2024-02-29"), "29/02/2024");
 
 assert.equal(etiquetaGate("G3"), "Gate 4 · UVIE e ingreso a CFE");
 assert.equal(traducirGateMensaje("G3 requiere un acuse antes de G4."), "Gate 4 · UVIE e ingreso a CFE requiere un acuse antes de Gate 5 · Oficio resolutivo.");
@@ -58,6 +60,10 @@ const eventoOficio = [{ event_type: "resolucion_cfe", resultado: "favorable", ve
 assert.deepEqual(alertaVigenciaOficio([{ gate_code: "G5", status: "abierto" }], eventoOficio, hoy), {
   venceAt: "2026-12-02T00:00:00.000Z", diasRestantes: 5, nivel: "roja",
 });
+assert.equal(textoAlertaVigenciaOficio({ venceAt: "2026-12-02T00:00:00.000Z", diasRestantes: 5, nivel: "roja" }), "El oficio resolutivo de CFE vence en 5 días (02/12/2026). Antes de esa fecha hay que firmar el contrato.");
+assert.equal(textoAlertaVigenciaOficio({ venceAt: "2026-12-02T00:00:00.000Z", diasRestantes: 5, nivel: "roja" }, true), "Oficio CFE vence en 5 días · 02/12/2026");
+assert.equal(textoAlertaVigenciaOficio({ venceAt: "2026-11-25T00:00:00.000Z", diasRestantes: -2, nivel: "roja" }), "El oficio resolutivo de CFE venció hace 2 días (25/11/2026). Tu Gestor IDC te indicará los siguientes pasos.");
+assert.equal(textoAlertaVigenciaOficio({ venceAt: "2026-11-25T00:00:00.000Z", diasRestantes: -2, nivel: "roja" }, true), "Oficio CFE vencido hace 2 días · 25/11/2026");
 assert.equal(alertaVigenciaOficio([{ gate_code: "G5", status: "cerrado" }], eventoOficio, hoy), null);
 assert.equal(alertaVigenciaOficio([{ gate_code: "G5", status: "abierto" }], [{ ...eventoOficio[0], resultado: "no_favorable" }], hoy), null);
 

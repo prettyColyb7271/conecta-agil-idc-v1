@@ -150,7 +150,7 @@ export default function GestorInicio({ proyectos, pendientes, datosReales = fals
               {lista.map((p) => (
                 <tr key={p.folio} className="border-t border-[#8fb0d1]">
                   <td className="py-2 pr-3 font-bold">{p.folio}</td>
-                  <td className="pr-3"><span className="block font-bold">{p.proyecto}</span><span className="block text-xs text-slate-600">{p.cliente}</span>{p.alertaVigencia && <AlertaVigenciaOficioBanner alerta={p.alertaVigencia} />}</td>
+                  <td className="pr-3"><span className="block font-bold">{p.proyecto}</span><span className="block text-xs text-slate-600">{p.cliente}</span>{p.alertaVigencia && <AlertaVigenciaOficioBanner alerta={p.alertaVigencia} esGestor />}</td>
                   <td className="pr-3">{p.tramite}</td>
                   <td className="pr-3"><span className="flex items-center gap-2 font-bold"><Dot tipo={p.estatus} />{ESTATUS_LABEL[p.estatus]}</span></td>
                   <td className="font-bold">Gate {p.gate} · {ETAPAS[p.gate - 1]?.nombre ?? "Etapa"}</td>

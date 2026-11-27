@@ -8,6 +8,7 @@ import { Panel } from "@/components/ui";
 import { alertaVigenciaOficio } from "@/lib/vigencia-oficio";
 import AlertaVigenciaOficioBanner from "@/components/AlertaVigenciaOficio";
 import { traducirGateMensaje } from "@/lib/gate-display";
+import { formatoFecha } from "@/lib/fechas";
 
 type Props = {
   expediente: {
@@ -42,7 +43,7 @@ export default function LocalPortal({ expediente, review }: Props) {
       urgente: true,
       href: "/portal/formatos",
     }));
-  if (expediente.reproceso_cfe) notificaciones.unshift({ id: "cfe-reproceso", titulo: `CFE pidió correcciones el ${expediente.reproceso_cfe.fecha.slice(0, 10)}`, archivo: expediente.reproceso_cfe.mensaje, urgente: true, href: "/portal/formatos" });
+  if (expediente.reproceso_cfe) notificaciones.unshift({ id: "cfe-reproceso", titulo: `CFE pidió correcciones el ${formatoFecha(expediente.reproceso_cfe.fecha)}`, archivo: expediente.reproceso_cfe.mensaje, urgente: true, href: "/portal/formatos" });
   const pendientes: Aviso[] = [
     ...(!expediente.privacy_accepted_at ? [{ id: "aviso", titulo: "Aceptar el aviso de privacidad", archivo: "Necesario para que IDC inicie tu trámite", urgente: true }] : []),
     ...review
@@ -75,6 +76,7 @@ export default function LocalPortal({ expediente, review }: Props) {
       notificaciones={notificaciones}
       pendientes={pendientes}
       procesos={[{ id: "fv", nombre: "Interconexión FV en MT", archivo: expediente.folio, estatus: semaforo.estatus, detalle: semaforo.detalle, gate: gateActual(expediente.gates) }]}
+      modoDemo={false}
       extra={extra}
     />
   );

@@ -7,6 +7,9 @@ import { encabezadoGate, gateActual } from "@/lib/semaforo";
 import RegistrarEventos from "@/components/RegistrarEventos";
 import ReprocesoCfe from "@/components/ReprocesoCfe";
 import { etiquetaGate, traducirGateMensaje } from "@/lib/gate-display";
+import { alertaVigenciaOficio } from "@/lib/vigencia-oficio";
+import AlertaVigenciaOficioBanner from "@/components/AlertaVigenciaOficio";
+import { formatoFecha } from "@/lib/fechas";
 
 type Requirement = {
   requirement_code: string;
@@ -27,7 +30,7 @@ type Gate = { gate_code: string; status: string };
 type Expediente = { id: string; folio: string; cliente_nombre: string };
 type Template = { id: string; code: string; version: number; sha256: string; active: number };
 type Format = { document_id: string; document_type: string; status: string; version_id: string; version_number: number; original_filename: string };
-type ExternalEvent = { event_type: string; document_id: string | null; description: string; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null; sequence: number; requiere_nueva_firma: number };
+type ExternalEvent = { event_type: string; event_date: string; document_id: string | null; description: string; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null; sequence: number; requiere_nueva_firma: number };
 type Reproceso = { fecha: string; mensaje: string; requirementCodes: string[] };
 type Aviso = { ok: boolean; text: string };
 type Firma = { fecha: string; lugar: string; solicitante: string; otorgante: string; apoderado: string; testigo1: string; testigo2: string; evidencia: File | null };
@@ -418,6 +421,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
   if (!expedientes.length) return <Panel title="Revisión del expediente"><p className="text-sm">No hay expedientes para revisar.</p></Panel>;
 
   const avanceEstado = cargadoId === selId ? estadoCarga : "cargando";
+  const alertaOficio = avanceEstado === "listo" ? alertaVigenciaOficio(gates, eventos) : null;
   const statusGate = (code: string) => avanceEstado === "listo" ? gates.find((gate) => gate.gate_code === code)?.status ?? "bloqueado" : "bloqueado";
   const etapaSel = ETAPAS.find((etapa) => etapa.code === gateSel) ?? ETAPAS[0];
   const exige = EXIGE[etapaSel.code] ?? {};
@@ -463,6 +467,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
           </p>
         </div>
         {avanceEstado === "error" && errorCarga && <p role="alert" className="mt-2 text-sm text-red-800">{errorCarga}</p>}
+        {alertaOficio && <AlertaVigenciaOficioBanner alerta={alertaOficio} esGestor />}
         {aviso && (
           <p role={aviso.ok ? "status" : "alert"} className={`mt-3 flex items-center gap-2 rounded px-3 py-2 text-sm font-bold ${aviso.ok ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-800"}`}>
             <Punto color={aviso.ok ? "#22c55e" : "#ef4444"} /> {aviso.text}
@@ -750,7 +755,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
                     <div>
                       <p className="font-bold">Versiones</p>
                       {item.versions.length === 0 && <p className="text-slate-600">Sin documentos cargados.</p>}
-                      <ul>{item.versions.slice(0, 4).map((version) => <li key={version.id}>v{version.version_number} · {version.original_filename} · {new Date(version.created_at).toLocaleDateString("es-MX")}</li>)}</ul>
+                      <ul>{item.versions.slice(0, 4).map((version) => <li key={version.id}>v{version.version_number} · {version.original_filename} · {formatoFecha(version.created_at)}</li>)}</ul>
                       {item.observations.length > 0 && <p className="mt-1 font-bold">Observaciones</p>}
                       {item.observations.map((observation, index) => (
                         <p key={index} className={observation.visibility === "cliente" ? "text-red-700" : "text-slate-700"}>

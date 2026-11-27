@@ -1,6 +1,6 @@
 # Paso A3 · vigencia, alertas e indicadores
 
-Rama `paso-a3`, creada desde `desarrollo` en `ccf4570`. A3 sigue en revisión; no se ha hecho push ni merge. Commits de código:
+Rama `paso-a3`, creada desde `desarrollo` en `ccf4570`. El supervisor aprobó A3. Los commits iniciales de A3 fueron:
 
 | Commit | Bloque |
 |---|---|
@@ -37,8 +37,34 @@ Las capturas se generaron en Edge headless contra el build local y una base temp
 - [Banner del cliente](img/a3-banner-cliente.png)
 - [Indicadores del Gestor IDC](img/a3-indicadores.png)
 
-## Servidor y estado
+## Servidor tras la validación original de A3
 
 Se detuvo solo el proceso anterior de `:3140`, se compiló con `APP_MODE=local` y `NEXT_PUBLIC_MODO=local`, y se aplicó `npm run db:migrate` sin seed. `npm run start:local` quedó activo y `http://localhost:3140/api/health` respondió HTTP 200 con `schemaVersion=8`.
 
-A3 queda en 🟡 en `paso-a3`, pendiente de revisión del supervisor. No se modificó `main`; no se hizo push ni merge.
+A3 fue aprobado por el supervisor. El estado final de integración de A3b se mantiene en `00_LEEME_PRIMERO/ESTADO_ACTUAL.md`.
+
+## A3b · metas solo en demo, avisos con contexto y fechas locales
+
+- En el portal local se ocultaron las metas ilustrativas del anteproyecto. En demo se conservan bajo “Metas del proyecto” y cada cifra se identifica como “Meta: …”. La otra vista que usa esos datos, el Gestor IDC, ya limita sus metas y tendencias a demo; en modo local calcula indicadores desde la base.
+- Los avisos del cliente explican que debe firmarse el contrato antes del vencimiento y qué hacer cuando el oficio ya venció. En el Gestor, la tabla de proyectos y la revisión muestran “Oficio CFE” con días y fecha límite.
+- Se agregó `formatoFecha` para fechas visibles en formato `dd/mm/aaaa` (`es-MX`), usando UTC para evitar cambios de día por zona horaria. Se aplica a alertas, G4, reproceso y fechas de revisión; el almacenamiento no cambió.
+- `supervisor-a3.mjs` ahora imprime el resumen reconocido por `isolated.mjs` y falla el proceso ante cualquier ❌.
+
+### Verificación A3b
+
+Regla 2 ejecutada en la copia aislada `C:\a3bv` después de `npm ci`, con modo local y datos ficticios.
+
+| Verificación | Resultado |
+|---|---|
+| `npm run lint` | ✅ |
+| `npx --no-install tsc --noEmit` | ✅ |
+| `npm run plantillas:check` | ✅ 5 plantillas DOCX y F-01 PDF |
+| `npm run build` | ✅ |
+| `npm run test:e2e:isolated` | ✅ 18 entradas; 626 comprobaciones reportadas, 0 fallos |
+| `regresiones-pr1` | ✅ Fechas `dd/mm/aaaa` y textos de vencimiento/expiración para cliente y Gestor |
+| `supervisor-a3` | ✅ 12 / 0; portal local sin “90%” ni “4.5”, alertas con contexto/fecha y Gate 6 |
+| Capturas aisladas | ✅ Cliente sin metas y Gestor con la alerta tanto en tabla como en revisión |
+
+Las capturas actualizadas usan solo expedientes ficticios: [Gestor IDC](img/a3-banner-gestor.png) y [portal del cliente](img/a3-banner-cliente.png). `npm ci` informó 7 vulnerabilidades moderadas del árbol de dependencias; no se modificaron dependencias ni se aplicó `npm audit fix`.
+
+El commit A3b usa el mensaje `A3b: metas solo en demo, avisos con contexto y fechas dd/mm/aaaa`. No se desplegó a Vercel.

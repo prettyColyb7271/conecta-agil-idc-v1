@@ -11,3 +11,14 @@ export function sumarMesesCalendario(fecha: string | Date, meses: number): Date 
   destino.setUTCDate(Math.min(dia, ultimoDia));
   return destino;
 }
+
+export function formatoFecha(fecha: string | Date): string {
+  const date = fecha instanceof Date ? fecha : new Date(fecha);
+  if (!Number.isFinite(date.getTime())) throw new RangeError("La fecha no es válida.");
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
