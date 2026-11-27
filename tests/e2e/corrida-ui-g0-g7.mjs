@@ -197,6 +197,8 @@ try {
   must("otro gestor valida R03", await otro.post(`${R}/requirements/R03`, { action: "validate" }), 200);
   must("volver a cerrar G1 conservando firmas", await close(gestor, R, "G1"), 200);
   must("volver a cerrar G2 sin firmar", await close(gestor, R, "G2"), 200);
+  const oldAcuse = await close(gestor, R, "G3");
+  ok("G3 rechaza acuse anterior al reinicio", oldAcuse.status === 409 && /acuse/.test(oldAcuse.json.error), oldAcuse.json.error);
   must("registrar acuse nuevo", await evidence(R, "ingreso_acuse", { medio: "portal", solicitudNumero: "SOL-NUEVO" }), 201);
   must("cerrar G3 con acuse nuevo", await close(gestor, R, "G3"), 200);
   must("reprocesar R01", await gestor.post(`${R}/gates`, { ...action, requirementCodes: ["R01"], feedback: { R01: "Corregir solicitud" } }), 201);

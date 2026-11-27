@@ -96,8 +96,11 @@ function validateClose(id: string, gate: GateCode): void {
     requirements([...REQUISITOS_POST_INSTALACION]);
     const r11 = database.prepare("SELECT version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = 'R11'").get(id) as { version_id: string | null } | undefined;
     if (!r11?.version_id) throw new GateConflictError("G3 requiere el dictamen UVIE cargado.");
-    const event = database.prepare("SELECT medio, solicitud_numero FROM external_events WHERE expediente_id = ? AND event_type = 'ingreso_acuse' ORDER BY event_date DESC LIMIT 1").get(id) as { medio: string | null; solicitud_numero: string | null } | undefined;
-    requireGateEvidence(id, "ingreso_acuse");
+    const event = database.prepare(`SELECT medio, solicitud_numero FROM external_events
+      WHERE expediente_id = ? AND event_type = 'ingreso_acuse'
+        AND rowid > COALESCE((SELECT MAX(rowid) FROM external_events WHERE expediente_id = ? AND event_type = 'cfe_incompleto'), 0)
+      ORDER BY rowid DESC LIMIT 1`).get(id, id) as { medio: string | null; solicitud_numero: string | null } | undefined;
+    if (!event) throw new GateConflictError("G3 requiere un acuse registrado después del último reinicio de CFE.");
     if (!event?.medio || !event.solicitud_numero) throw new GateConflictError("G3 requiere medio y número de solicitud CFE.");
   } else if (gate === "G4") {
     requireGateEvidence(id, "resolucion_cfe");

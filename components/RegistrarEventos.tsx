@@ -124,7 +124,8 @@ export default function RegistrarEventos(props: Props) {
   const faltantes: string[] = [];
   if (gate === "G3") {
     for (const code of ["R10", "R11"]) if (r(code)?.status !== "validado_idc" || (code === "R11" && !r(code)?.version_id)) faltantes.push(`${code} validado`);
-    const acuse = ultimo(eventos, "ingreso_acuse");
+    const reset = Math.max(0, ...eventos.filter((item) => item.event_type === "cfe_incompleto").map((item) => item.sequence));
+    const acuse = eventos.filter((item) => item.event_type === "ingreso_acuse" && item.sequence > reset).sort((a, b) => b.sequence - a.sequence)[0];
     if (!acuse?.document_id || !acuse.medio || !acuse.solicitud_numero) faltantes.push("Acuse con medio y número de solicitud");
   }
   if (gate === "G4") {
@@ -164,7 +165,7 @@ export default function RegistrarEventos(props: Props) {
       {gate === "G3" && <div className="text-xs"><p className="font-bold">Requisitos para el acuse</p>{["R10", "R11"].map((code) => <p key={code}>{r(code)?.status === "validado_idc" ? "✓" : "○"} {code} validado</p>)}</div>}
       {gate === "G6" && <div className="text-xs"><p className="font-bold">Checklist U01–U17</p><div className="mt-1 flex flex-wrap gap-1">{Array.from({ length: 17 }, (_, index) => `U${String(index + 1).padStart(2, "0")}`).map((code) => <span key={code} className={`rounded px-1 ${listo(code) ? "bg-emerald-100" : "bg-amber-100"}`}>{listo(code) ? "✓" : "○"} {code}</span>)}</div><button type="button" onClick={verUiie} className="mt-1 underline">Ir al grupo U de la revisión</button></div>}
       {tipos.map((tipo) => {
-        const registrado = ultimo(eventos, tipo);
+        const registrado = tipo === "ingreso_acuse" ? eventos.filter((item) => item.event_type === tipo && item.sequence > Math.max(0, ...eventos.filter((event) => event.event_type === "cfe_incompleto").map((event) => event.sequence))).sort((a, b) => b.sequence - a.sequence)[0] : ultimo(eventos, tipo);
         return <div key={tipo} className="space-y-1">
           {registrado?.document_id && <p className="text-xs">✓ {LABELS[tipo]} registrado · <a className="underline" href={`/api/documents/${registrado.document_id}`}>Ver PDF</a></p>}
           {tipo === "resolucion_cfe" && registrado && <div className="text-xs">Resultado: {registrado.resultado ?? "sin registrar"} · Fecha límite: {registrado.vence_at?.slice(0, 10) ?? "sin registrar"}{registrado.subgate_document_id && <> · <a className="underline" href={`/api/documents/${registrado.subgate_document_id}`}>Ver subgate</a></>}</div>}
