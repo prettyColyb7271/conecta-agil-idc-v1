@@ -54,3 +54,40 @@ La suite comprueba U06 en el HTML del portal y los estados de firma, además de 
 - Revisión del equipo de la rama local, de la regla de negocio y de la interfaz.
 - Compartir o versionar por separado los dos documentos del workspace externos al repositorio.
 - Decidir, tras la revisión y con autorización expresa, cómo publicar e integrar los cambios. No se ha hecho push ni merge.
+
+## Verificación
+
+Se verificó el commit `65acc14f40669f278f0d99211a4dc20b47023c11` en `pr-1-validation`, con `APP_MODE=local`, `NEXT_PUBLIC_MODO=local`, bases temporales y puertos distintos de 3140. La comparación de fallos se ejecutó en una copia temporal de `desarrollo` (`bb4f054`).
+
+| Prueba | Resultado | ¿Falla previa al PR? |
+|---|---|---|
+| `npm run lint` | Correcto | No aplica |
+| `npx --no-install tsc --noEmit` | Correcto | No aplica |
+| `npm run plantillas:check` | Correcto: 5 DOCX y F-01 PDF | No aplica |
+| `npm run build` | Correcto en copia de validación | No aplica |
+| `npm run test:e2e:isolated` | 288 ✅ / 0 ❌; migración y pruebas focalizadas correctas | No aplica |
+| `supervisor-pasos-1-4.mjs` | 94 ✅ / 0 ❌, incluido en la suite aislada | No aplica |
+| `supervisor-documentos.mjs` | 33 ✅ / 0 ❌, incluido | No aplica |
+| `supervisor-paso6.mjs` | 13 ✅ / 0 ❌, incluido | No aplica |
+| `supervisor-gestores.mjs` | 27 ✅ / 0 ❌, incluido | No aplica |
+| `supervisor-flujo-g0-g2.mjs` | 37 ✅ / 0 ❌, incluido | No aplica |
+| `supervisor-paso7.mjs` | 6 ✅ / 0 ❌, incluido | No aplica |
+| `supervisor-flujo-g3-g7.mjs` | 68 ✅ / 0 ❌, incluido | No aplica |
+| `supervisor-seguridad-aislado.mjs` → `supervisor-seguridad.mjs` | 10 ✅ / 0 ❌, incluido indirectamente | No aplica |
+| `supervisor-seguridad-ataque.mjs` | 28 ✅ / 6 ❌ | Sí: mismos 28 ✅ / 6 ❌ en `bb4f054` |
+| Humo autenticado | `/portal`, `/portal/formatos`, `/gestor` y `/admin`: HTTP 200 y contenido esperado | No aplica |
+
+El humo usó tres sesiones ficticias, vinculación MFA para el administrador y comprobaciones HTTP de contenido; no fue una prueba interactiva de navegador. El servidor se apagó al terminar. No se accedió a la base real ni al servidor de 3140.
+
+### Fallos de `supervisor-seguridad-ataque.mjs`
+
+Los seis fallos siguientes se reprodujeron tanto en `65acc14` como en `bb4f054`. Se muestran los nombres y los detalles emitidos por la suite; esta devuelve código de salida 0 aun cuando informa fallos.
+
+1. `admin sin MFA: /admin/usuarios → /seguridad`: `200 null`.
+2. `Gestor con MFA vinculado: el login SÍ pide código`: `{"role":"coordinador_idc","name":"Gestor IDC Demo Ficticio","mustChangePassword":false}`.
+3. `Gestor con MFA: sin código no hay sesión`: sin detalle adicional.
+4. `desvincular sin motivo → 400`: sin detalle adicional.
+5. `enlace funciona una vez`: sin detalle adicional.
+6. `cliente entra con la nueva contraseña`: sin detalle adicional.
+
+No se corrigieron esos fallos. La especificación externa al repositorio se actualizó para indicar `Gestor IDC` como responsable de G3. No se hizo push ni merge.
