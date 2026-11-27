@@ -5,6 +5,7 @@ import { Panel, SmallButton } from "@/components/ui";
 import { ETAPAS, REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA, esPostInstalacion } from "@/lib/etapas";
 import { encabezadoGate, gateActual } from "@/lib/semaforo";
 import RegistrarEventos from "@/components/RegistrarEventos";
+import ReprocesoCfe from "@/components/ReprocesoCfe";
 
 type Requirement = {
   requirement_code: string;
@@ -14,6 +15,7 @@ type Requirement = {
   integra: string;
   sensible: number;
   validaciones: string;
+  updated_at?: string;
   document_id: string | null;
   version_id: string | null;
   versions: Array<{ id: string; version_number: number; original_filename: string; created_at: string; uploaded_by_current_user: number }>;
@@ -24,7 +26,8 @@ type Gate = { gate_code: string; status: string };
 type Expediente = { id: string; folio: string; cliente_nombre: string };
 type Template = { id: string; code: string; version: number; sha256: string; active: number };
 type Format = { document_id: string; document_type: string; status: string; version_id: string; version_number: number; original_filename: string };
-type ExternalEvent = { event_type: string; document_id: string | null; description: string; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null };
+type ExternalEvent = { event_type: string; document_id: string | null; description: string; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null; sequence: number; requiere_nueva_firma: number };
+type Reproceso = { fecha: string; mensaje: string; requirementCodes: string[] };
 type Aviso = { ok: boolean; text: string };
 type Firma = { fecha: string; lugar: string; solicitante: string; otorgante: string; apoderado: string; testigo1: string; testigo2: string; evidencia: File | null };
 const firmaVacia = (): Firma => ({ fecha: "", lugar: "", solicitante: "", otorgante: "", apoderado: "", testigo1: "", testigo2: "", evidencia: null });
@@ -97,6 +100,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
   const [gates, setGates] = useState<Gate[]>([]);
   const [formats, setFormats] = useState<Format[]>([]);
   const [eventos, setEventos] = useState<ExternalEvent[]>([]);
+  const [reproceso, setReproceso] = useState<Reproceso | null>(null);
   const [responsableId, setResponsableId] = useState<string | null>(null);
   const [firma, setFirma] = useState<Firma>(firmaVacia);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -138,7 +142,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       ]);
       const [review, gateData, formatData, expedienteData] = await Promise.all(responses.map((response) => response.json())) as [
         { requirements?: Requirement[]; error?: string }, { gates?: Gate[]; error?: string }, { formats?: Format[]; error?: string },
-        { expediente?: { external_events?: ExternalEvent[]; gestor_id: string | null }; error?: string },
+        { expediente?: { external_events?: ExternalEvent[]; gestor_id: string | null; reproceso_cfe: Reproceso | null }; error?: string },
       ];
       const bodies = [review, gateData, formatData, expedienteData];
       const fallo = responses.findIndex((response) => !response.ok);
@@ -152,6 +156,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       setGates(nextGates);
       setFormats(formatData.formats);
       setEventos(expedienteData.expediente.external_events);
+      setReproceso(expedienteData.expediente.reproceso_cfe);
       setResponsableId(expedienteData.expediente.gestor_id);
       setCargadoId(id);
       setGateSel((current) => current || ETAPAS[gateActual(nextGates) - 1].code);
@@ -404,6 +409,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
     setGates([]);
     setFormats([]);
     setEventos([]);
+    setReproceso(null);
     setResponsableId(null);
     setFirma(firmaVacia());
     setEstadoCarga("cargando");
@@ -422,7 +428,8 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
   const visibles = delGrupo.filter((item) => filtro === "todos" || estado(item.status).grupo === filtro);
   const cuenta = (id: (typeof FILTROS)[number]["id"]) => id === "todos" ? delGrupo.length : delGrupo.filter((item) => estado(item.status).grupo === id).length;
   const formato = (code: string) => formats.find((item) => item.document_type.includes(code));
-  const firmaRegistrada = eventos.some((item) => item.event_type === "firma_presencial" && item.document_id &&
+  const ultimoReprocesoFirma = Math.max(0, ...eventos.filter((item) => item.event_type === "cfe_incompleto" && item.requiere_nueva_firma).map((item) => item.sequence));
+  const firmaRegistrada = eventos.some((item) => item.event_type === "firma_presencial" && item.sequence > ultimoReprocesoFirma && item.document_id &&
     ["Lugar:", "Solicitante:", "Otorgante:", "Apoderado:", "Testigo 1:", "Testigo 2:"].every((label) => item.description.includes(label)));
   const faltantesG2 = [
     ...FIRMAS.filter(({ requisito }) => requirements.find((item) => item.requirement_code === requisito)?.status !== "escaneo_verificado_idc").map(({ requisito }) => `Escaneo ${requisito} verificado`),
@@ -522,6 +529,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
             </div>
           )}
           {exige.evidencias && <ul className="mt-2 list-inside list-disc text-xs">{exige.evidencias.map((item) => <li key={item}>{item}</li>)}</ul>}
+          {etapaSel.code === "G1" && reproceso && <ReprocesoCfe reproceso={reproceso} requirements={requirements} gestor />}
           {etapaSel.code === "G2" && (
             <div className="mt-4 space-y-3 rounded bg-white p-3">
               <p className="text-sm font-bold">Firma presencial y escaneos</p>

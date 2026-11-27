@@ -70,7 +70,7 @@ function validateClose(id: string, gate: GateCode): void {
     const rows = database.prepare(`SELECT requirement_code, status, version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code IN (${placeholders})`).all(id, ...codes) as Array<{ requirement_code: string; status: string; version_id: string | null }>;
     const missing = codes.filter((code) => {
       const row = rows.find((item) => item.requirement_code === code);
-      return !row || !["validado_idc", "no_aplica_justificado"].includes(row.status);
+      return !row || !["validado_idc", "no_aplica_justificado", ...(gate === "G1" && ["R01", "R07"].includes(code) ? ["escaneo_verificado_idc"] : [])].includes(row.status);
     });
     if (missing.length) throw new GateConflictError(`No se puede cerrar ${gate}; faltan requisitos: ${missing.join(", ")}.`);
   };
@@ -86,13 +86,17 @@ function validateClose(id: string, gate: GateCode): void {
       const row = database.prepare("SELECT status FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?").get(id, code) as { status: string } | undefined;
       if (!row || row.status !== "escaneo_verificado_idc") throw new GateConflictError(`G2 requiere el escaneo verificado de ${code}.`);
     }
-    requireGateEvidence(id, "firma_presencial");
+    const signature = database.prepare(`SELECT id FROM external_events WHERE expediente_id = ? AND event_type = 'firma_presencial'
+      AND rowid > COALESCE((SELECT MAX(e.rowid) FROM external_events e, json_each(e.metadata_json, '$.requirementCodes') c
+        WHERE e.expediente_id = ? AND e.event_type = 'cfe_incompleto' AND c.value IN ('R01', 'R07')), 0)
+      LIMIT 1`).get(id, id);
+    if (!signature) throw new GateConflictError("G2 requiere registrar la firma presencial después del reproceso de R01 o R07.");
   } else if (gate === "G3") {
     // Fotos del sistema funcionando y dictamen UVIE son requisito para ingresar a CFE.
     requirements([...REQUISITOS_POST_INSTALACION]);
     const r11 = database.prepare("SELECT version_id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = 'R11'").get(id) as { version_id: string | null } | undefined;
     if (!r11?.version_id) throw new GateConflictError("G3 requiere el dictamen UVIE cargado.");
-    const event = getDatabase().prepare("SELECT medio, solicitud_numero FROM external_events WHERE expediente_id = ? AND event_type = 'ingreso_acuse' ORDER BY event_date DESC LIMIT 1").get(id) as { medio: string | null; solicitud_numero: string | null } | undefined;
+    const event = database.prepare("SELECT medio, solicitud_numero FROM external_events WHERE expediente_id = ? AND event_type = 'ingreso_acuse' ORDER BY event_date DESC LIMIT 1").get(id) as { medio: string | null; solicitud_numero: string | null } | undefined;
     requireGateEvidence(id, "ingreso_acuse");
     if (!event?.medio || !event.solicitud_numero) throw new GateConflictError("G3 requiere medio y número de solicitud CFE.");
   } else if (gate === "G4") {
@@ -151,13 +155,28 @@ export function listGates(user: AuthUser, expedienteId: string) {
   return gateRows(expedienteId);
 }
 
-export function addExternalEvent(user: AuthUser, expedienteId: string, input: { eventType: ExternalEventType; eventDate?: string; description: string; documentId?: string; medio?: string; solicitudNumero?: string; vigenciaMeses?: number; venceAt?: string; resultado?: "favorable" | "condicionado" | "no_favorable"; subgateRequerido?: boolean; subgateDocumentId?: string }) {
+export function addExternalEvent(user: AuthUser, expedienteId: string, input: { eventType: ExternalEventType; eventDate?: string; description: string; documentId?: string; medio?: string; solicitudNumero?: string; vigenciaMeses?: number; venceAt?: string; resultado?: "favorable" | "condicionado" | "no_favorable"; subgateRequerido?: boolean; subgateDocumentId?: string; requirementCodes?: unknown; feedback?: unknown; internalNotes?: unknown }) {
   assertIdc(user);
   assertExpediente(user, expedienteId);
   const expedienteStatus = getDatabase().prepare("SELECT status FROM expedientes WHERE id = ?").get(expedienteId) as { status: string } | undefined;
   if (expedienteStatus?.status === "cerrado") throw new GateConflictError("El expediente está cerrado.");
   if (!EVENT_TYPES.includes(input.eventType)) throw new GateValidationError("Tipo de evidencia externa inválido.");
-  if (!input.description?.trim()) throw new GateValidationError("La descripción es obligatoria.");
+  if (typeof input.description !== "string" || !input.description.trim()) throw new GateValidationError("La descripción es obligatoria.");
+  let codes: string[] = [];
+  let feedback: Record<string, unknown> = {};
+  let notes: Record<string, unknown> = {};
+  if (input.eventType === "cfe_incompleto") {
+    if (!Array.isArray(input.requirementCodes) || input.requirementCodes.length === 0 || input.requirementCodes.some((code) => typeof code !== "string" || !/^R(0[1-9]|1[01])$/.test(code)) || new Set(input.requirementCodes).size !== input.requirementCodes.length) throw new GateValidationError("Selecciona al menos un requisito distinto entre R01 y R11.");
+    codes = input.requirementCodes;
+    if (!input.feedback || typeof input.feedback !== "object" || Array.isArray(input.feedback)) throw new GateValidationError("La retroalimentación para cada requisito es obligatoria.");
+    feedback = input.feedback as Record<string, unknown>;
+    if (codes.some((code) => typeof feedback[code] !== "string" || !(feedback[code] as string).trim())) throw new GateValidationError("La retroalimentación para cada requisito es obligatoria.");
+    if (input.internalNotes !== undefined && (!input.internalNotes || typeof input.internalNotes !== "object" || Array.isArray(input.internalNotes))) throw new GateValidationError("Las notas internas deben ser un objeto.");
+    notes = (input.internalNotes ?? {}) as Record<string, unknown>;
+    if (codes.some((code) => notes[code] !== undefined && typeof notes[code] !== "string")) throw new GateValidationError("Las notas internas deben ser texto.");
+    const g1 = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G1'").get(expedienteId) as { status: string } | undefined;
+    if (g1?.status !== "cerrado") throw new GateConflictError("G1 debe estar cerrado para registrar un reproceso CFE.");
+  }
   if (["firma_presencial", "ingreso_acuse", "resolucion_cfe", "contrato", "uiie", "certificado_uiie", "medidor", "interconexion", "alta_comercial"].includes(input.eventType) && !input.documentId) {
     throw new GateValidationError("Esta evidencia requiere un documento escaneado.");
   }
@@ -180,16 +199,24 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
     ? getDatabase().prepare("SELECT id FROM external_events WHERE expediente_id = ? AND event_type = 'firma_presencial' AND document_id = ? ORDER BY created_at DESC LIMIT 1").get(expedienteId, input.documentId) as { id: string } | undefined
     : undefined;
   const id = existingSignature?.id ?? crypto.randomUUID();
-  const insertEvent = () => getDatabase().prepare("INSERT INTO external_events (id, expediente_id, event_type, event_date, description, document_id, created_by, created_at, medio, solicitud_numero, vigencia_meses, vence_at, resultado, subgate_requerido, subgate_document_id, reinicio_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, expedienteId, input.eventType, input.eventDate ?? now, input.description.trim(), input.documentId ?? null, user.id, now, input.medio ?? null, input.solicitudNumero ?? null, input.vigenciaMeses ?? null, expiresAt ?? null, input.resultado ?? null, input.subgateRequerido ? 1 : 0, input.subgateDocumentId ?? null, input.eventType === "cfe_incompleto" ? now : null);
+  const insertEvent = () => getDatabase().prepare("INSERT INTO external_events (id, expediente_id, event_type, event_date, description, document_id, created_by, created_at, medio, solicitud_numero, vigencia_meses, vence_at, resultado, subgate_requerido, subgate_document_id, reinicio_at, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, expedienteId, input.eventType, input.eventDate ?? now, input.description.trim(), input.documentId ?? null, user.id, now, input.medio ?? null, input.solicitudNumero ?? null, input.vigenciaMeses ?? null, expiresAt ?? null, input.resultado ?? null, input.subgateRequerido ? 1 : 0, input.subgateDocumentId ?? null, input.eventType === "cfe_incompleto" ? now : null, input.eventType === "cfe_incompleto" ? JSON.stringify({ requirementCodes: codes }) : "{}");
   if (input.eventType === "cfe_incompleto") {
     withTransaction(() => {
       insertEvent();
       getDatabase().prepare("UPDATE gates SET status = 'abierto', closed_by = NULL, closed_at = NULL, reopened_at = ?, reopen_reason = ? WHERE expediente_id = ? AND gate_code = 'G1'").run(now, input.description.trim(), expedienteId);
       getDatabase().prepare("UPDATE gates SET status = 'bloqueado' WHERE expediente_id = ? AND gate_code >= 'G2'").run(expedienteId);
-      getDatabase().prepare("UPDATE expediente_requirements SET status = 'observado', observed_reason = ?, validated_by = NULL, validated_at = NULL, workflow_status = NULL, updated_at = ? WHERE expediente_id = ? AND requirement_code LIKE 'R%'").run(input.description.trim(), now, expedienteId);
-      const requirements = getDatabase().prepare("SELECT id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code LIKE 'R%'").all(expedienteId) as Array<{ id: string }>;
-      const observation = getDatabase().prepare("INSERT INTO observations (id, expediente_id, requirement_id, author_id, visibility, body, created_at) VALUES (?, ?, ?, ?, 'cliente', ?, ?)");
-      for (const requirement of requirements) observation.run(crypto.randomUUID(), expedienteId, requirement.id, user.id, input.description.trim(), now);
+      const update = getDatabase().prepare("UPDATE expediente_requirements SET status = 'observado', observed_reason = ?, validated_by = NULL, validated_at = NULL, workflow_status = NULL, updated_at = ? WHERE expediente_id = ? AND requirement_code = ?");
+      const find = getDatabase().prepare("SELECT id FROM expediente_requirements WHERE expediente_id = ? AND requirement_code = ?");
+      const observation = getDatabase().prepare("INSERT INTO observations (id, expediente_id, requirement_id, author_id, visibility, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      for (const code of codes) {
+        const requirement = find.get(expedienteId, code) as { id: string } | undefined;
+        if (!requirement) throw new GateValidationError(`El requisito ${code} no existe en el expediente.`);
+        const text = (feedback[code] as string).trim();
+        update.run(text, now, expedienteId, code);
+        observation.run(crypto.randomUUID(), expedienteId, requirement.id, user.id, "cliente", text, now);
+        const note = notes[code];
+        if (typeof note === "string" && note.trim()) observation.run(crypto.randomUUID(), expedienteId, requirement.id, user.id, "interno_idc", note.trim(), now);
+      }
     });
   } else if (existingSignature) {
     getDatabase().prepare("UPDATE external_events SET event_date = ?, description = ? WHERE id = ?").run(input.eventDate ?? now, input.description.trim(), id);

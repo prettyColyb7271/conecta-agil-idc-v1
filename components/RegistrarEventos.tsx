@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type Requirement = { requirement_code: string; status: string; version_id: string | null };
+type Requirement = { requirement_code: string; name: string; status: string; version_id: string | null };
 type Evento = {
   event_type: string;
   document_id: string | null;
@@ -12,6 +12,7 @@ type Evento = {
   subgate_document_id: string | null;
   medio: string | null;
   solicitud_numero: string | null;
+  sequence: number;
 };
 type Tipo = "ingreso_acuse" | "resolucion_cfe" | "contrato" | "uiie" | "certificado_uiie" | "medidor" | "interconexion" | "alta_comercial";
 type Props = {
@@ -113,6 +114,9 @@ export default function RegistrarEventos(props: Props) {
   const { gate, abierto, responsableActual, requirements, eventos, ocupado, setOcupado, notificar, refrescar, cerrar, verUiie, alReprocesar, expedienteId } = props;
   const [motivo, setMotivo] = useState("");
   const [otroOficio, setOtroOficio] = useState(false);
+  const [seleccion, setSeleccion] = useState(() => Array.from({ length: 11 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`));
+  const [feedback, setFeedback] = useState<Record<string, string>>({});
+  const [internalNotes, setInternalNotes] = useState<Record<string, string>>({});
   const tipos = POR_GATE[gate] ?? [];
   const r = (code: string) => requirements.find((item) => item.requirement_code === code);
   const listo = (code: string) => ["validado_idc", "no_aplica_justificado"].includes(r(code)?.status ?? "");
@@ -139,14 +143,15 @@ export default function RegistrarEventos(props: Props) {
   async function eventoSinDocumento(eventType: "cfe_incompleto" | "cierre") {
     const description = eventType === "cfe_incompleto" ? motivo.trim() : "Cierre revisado";
     if (!description) return;
-    if (eventType === "cfe_incompleto" && !window.confirm("CFE reporta incompleto: se reabrirá G1, se bloquearán G2 a G7, todos los requisitos R quedarán observados y se reiniciará el plazo de CFE. ¿Continuar?")) return;
+    if (eventType === "cfe_incompleto" && (!seleccion.length || seleccion.some((code) => !feedback[code]?.trim()))) return;
+    if (eventType === "cfe_incompleto" && !window.confirm("CFE reporta incompleto: se reabrirá G1, se bloquearán G2 a G7, solo los requisitos seleccionados quedarán observados y se reiniciará el plazo de CFE. ¿Continuar?")) return;
     setOcupado(eventType);
     try {
-      const response = await fetch(`/api/expedientes/${expedienteId}/gates`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "event", eventType, description }) });
-      const body = await response.json() as { error?: string };
+      const response = await fetch(`/api/expedientes/${expedienteId}/gates`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "event", eventType, description, ...(eventType === "cfe_incompleto" ? { requirementCodes: seleccion, feedback, internalNotes } : {}) }) });
+      const body = await response.json() as { error?: string; warning?: string };
       if (!response.ok) throw new Error(body.error ?? `Error HTTP ${response.status}.`);
       setMotivo("");
-      notificar({ ok: true, text: eventType === "cierre" ? "Cierre registrado." : "Reproceso registrado; G1 se reabrió." });
+      notificar({ ok: !body.warning, text: body.warning ?? (eventType === "cierre" ? "Cierre registrado." : "Reproceso registrado; G1 se reabrió.") });
       if (eventType === "cfe_incompleto") alReprocesar();
       await refrescar();
     } catch (error) {
@@ -170,7 +175,13 @@ export default function RegistrarEventos(props: Props) {
       {gate === "G7" && <div className="text-xs">{ultimo(eventos, "cierre") ? <p>✓ Cierre registrado.</p> : abierto && <button type="button" disabled={ocupado !== null || tipos.some((tipo) => !ultimo(eventos, tipo)?.document_id)} onClick={() => void eventoSinDocumento("cierre")} className={boton}>Registrar cierre</button>}<p className="mt-1 font-semibold">G7 lo cierra un Gestor IDC distinto del responsable.</p></div>}
       <div className="text-xs"><p className="font-bold">Qué falta para cerrar {gate}</p>{faltantes.length ? <ul className="list-inside list-disc">{faltantes.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No falta nada.</p>}</div>
       {abierto && <button type="button" disabled={ocupado !== null || faltantes.length > 0 || (gate === "G7" && responsableActual)} onClick={() => void cerrar(gate)} className={boton}>{gate === "G7" && responsableActual ? "Lo cierra otro Gestor IDC" : ocupado === gate ? "Cerrando…" : `Cerrar ${gate}`}</button>}
-      {gate === "G3" && abierto && <form className="space-y-2 border-t border-red-300 pt-3" onSubmit={(event) => { event.preventDefault(); void eventoSinDocumento("cfe_incompleto"); }}><p className="text-xs font-bold text-red-800">CFE reporta incompleto · reproceso destructivo</p><label className="block text-xs font-bold">Motivo obligatorio<textarea required value={motivo} onChange={(event) => setMotivo(event.target.value)} className={input} /></label><button type="submit" disabled={ocupado !== null || !motivo.trim()} className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">CFE reporta incompleto</button></form>}
+      {gate === "G3" && abierto && <form className="space-y-2 border-t border-red-300 pt-3" onSubmit={(event) => { event.preventDefault(); void eventoSinDocumento("cfe_incompleto"); }}><p className="text-xs font-bold text-red-800">CFE reporta incompleto · reproceso destructivo</p><label className="block text-xs font-bold">Mensaje general al cliente<textarea required value={motivo} onChange={(event) => setMotivo(event.target.value)} className={input} /></label>
+        {Array.from({ length: 11 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`).map((code) => <div key={code} className="rounded bg-red-50 p-2 text-xs">
+          <label className="font-bold"><input type="checkbox" checked={seleccion.includes(code)} onChange={(event) => setSeleccion((current) => event.target.checked ? [...current, code] : current.filter((value) => value !== code))} /> {code} · {r(code)?.name}</label>
+          {seleccion.includes(code) && <><label className="block font-bold">Retroalimentación para el cliente<textarea required value={feedback[code] ?? ""} onChange={(event) => setFeedback({ ...feedback, [code]: event.target.value })} className={input} /></label><label className="block font-bold">Nota interna (opcional)<textarea value={internalNotes[code] ?? ""} onChange={(event) => setInternalNotes({ ...internalNotes, [code]: event.target.value })} className={input} /></label></>}
+        </div>)}
+        {(seleccion.includes("R01") || seleccion.includes("R07")) && <p className="text-xs font-bold text-red-800">Habrá que volver a firmar F-01/F-02.</p>}
+        <button type="submit" disabled={ocupado !== null || !motivo.trim() || !seleccion.length || seleccion.some((code) => !feedback[code]?.trim())} className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">CFE reporta incompleto</button></form>}
     </div>
   );
 }

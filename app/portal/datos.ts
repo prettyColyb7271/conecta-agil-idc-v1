@@ -17,6 +17,7 @@ export function cargarPortalCliente(user: AuthUser) {
     integra: item.integra,
     validaciones: item.validaciones,
     reutiliza_code: item.reutiliza_code ?? null,
+    updated_at: item.updated_at,
     observations: item.observations.map((observation) => ({ visibility: observation.visibility, body: observation.body })),
   })) : [];
   const formats = expediente ? listGeneratedFormats(user, expediente.id).map((format) => ({ ...format })) : [];

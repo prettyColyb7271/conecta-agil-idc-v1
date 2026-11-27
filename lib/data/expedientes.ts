@@ -65,7 +65,8 @@ export type ExpedienteView = {
   created_at: string;
   updated_at: string;
   gates: Array<{ gate_code: string; status: string }>;
-  external_events?: Array<{ event_type: string; event_date: string; description: string; document_id: string | null; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null }>;
+  external_events?: Array<{ event_type: string; event_date: string; description: string; document_id: string | null; resultado: string | null; vence_at: string | null; subgate_requerido: number; subgate_document_id: string | null; medio: string | null; solicitud_numero: string | null; sequence: number; requiere_nueva_firma: number }>;
+  reproceso_cfe: { fecha: string; mensaje: string; requirementCodes: string[] } | null;
   requirements: Array<{ requirement_code: string; name: string; status: string }>;
   assignments: Array<{ user_id: string; display_name: string; assignment_type: string; starts_at: string; ends_at: string | null }>;
 };
@@ -109,8 +110,16 @@ function enrich(row: ExpedienteView): ExpedienteView {
     FROM expediente_assignments ea JOIN users u ON u.id = ea.user_id
     WHERE ea.expediente_id = ? ORDER BY ea.starts_at
   `).all(row.id) as ExpedienteView["assignments"];
-  const externalEvents = database.prepare("SELECT event_type, event_date, description, document_id, resultado, vence_at, subgate_requerido, subgate_document_id, medio, solicitud_numero FROM external_events WHERE expediente_id = ? ORDER BY event_date, created_at, rowid").all(row.id) as NonNullable<ExpedienteView["external_events"]>;
-  return { ...row, gates: gates.map((item) => ({ ...item })), requirements: requirements.map((item) => ({ ...item })), assignments: assignments.map((item) => ({ ...item })), external_events: externalEvents.map((item) => ({ ...item })) };
+  const externalEvents = database.prepare(`SELECT event_type, event_date, description, document_id, resultado, vence_at, subgate_requerido, subgate_document_id, medio, solicitud_numero, rowid AS sequence,
+    CASE WHEN event_type = 'cfe_incompleto' AND EXISTS (SELECT 1 FROM json_each(metadata_json, '$.requirementCodes') WHERE value IN ('R01', 'R07')) THEN 1 ELSE 0 END AS requiere_nueva_firma
+    FROM external_events WHERE expediente_id = ? ORDER BY event_date, created_at, rowid`).all(row.id) as NonNullable<ExpedienteView["external_events"]>;
+  const active = database.prepare(`SELECT e.reinicio_at, e.description, e.metadata_json FROM external_events e
+    JOIN gates g ON g.expediente_id = e.expediente_id AND g.gate_code = 'G1'
+    WHERE e.expediente_id = ? AND e.event_type = 'cfe_incompleto' AND g.status = 'abierto' AND g.reopened_at = e.reinicio_at
+    ORDER BY e.rowid DESC LIMIT 1`).get(row.id) as { reinicio_at: string; description: string; metadata_json: string | null } | undefined;
+  const metadata = active?.metadata_json ? JSON.parse(active.metadata_json) as { requirementCodes?: string[] } : {};
+  const reproceso = active ? { fecha: active.reinicio_at, mensaje: active.description, requirementCodes: metadata.requirementCodes ?? [] } : null;
+  return { ...row, gates: gates.map((item) => ({ ...item })), requirements: requirements.map((item) => ({ ...item })), assignments: assignments.map((item) => ({ ...item })), external_events: externalEvents.map((item) => ({ ...item })), reproceso_cfe: reproceso };
 }
 
 export function listExpedientes(user: ScopeUser): ExpedienteView[] {
@@ -164,12 +173,16 @@ export function listGestorPendientes(user: ScopeUser, scope: "mine" | "all" = "a
   `).all(...params) as Array<{ expediente_id: string; folio: string }>;
   for (const item of unassigned) pending.push({ kind: "sin_responsable", expedienteId: item.expediente_id, folio: item.folio, label: "Expediente sin responsable IDC activo." });
   const observed = database.prepare(`
-    SELECT e.id AS expediente_id, e.folio, er.requirement_code
+    SELECT e.id AS expediente_id, e.folio, er.requirement_code, rc.integra, rc.tipo
     FROM expedientes e JOIN expediente_requirements er ON er.expediente_id = e.id
+    JOIN requirement_catalog rc ON rc.code = er.requirement_code
     WHERE er.status = 'observado' ${assignmentFilter}
     ORDER BY e.folio, er.requirement_code
-  `).all(...params) as Array<{ expediente_id: string; folio: string; requirement_code: string }>;
-  for (const item of observed) pending.push({ kind: "observado", expedienteId: item.expediente_id, folio: item.folio, requirementCode: item.requirement_code, label: `${item.requirement_code} está observado y espera al cliente.` });
+  `).all(...params) as Array<{ expediente_id: string; folio: string; requirement_code: string; integra: string; tipo: string }>;
+  for (const item of observed) {
+    const responsable = item.tipo === "generado" ? "IDC prepara y el cliente firma" : item.integra === "Cliente" && ["carga", "carga_sensible", "carga_multiple"].includes(item.tipo) ? "espera al cliente" : "espera a IDC";
+    pending.push({ kind: "observado", expedienteId: item.expediente_id, folio: item.folio, requirementCode: item.requirement_code, label: `${item.requirement_code} está observado y ${responsable}.` });
+  }
   const ready = database.prepare(`
     SELECT e.id AS expediente_id, e.folio
     FROM expedientes e

@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { Dot, Panel } from "@/components/ui";
 import CapturaDatos from "@/components/portal/CapturaDatos";
 import { ESTADO_DOCUMENTO, LISTOS, documentosDelCliente, type RequisitoCliente } from "@/lib/portal-cliente";
+import ReprocesoCfe from "@/components/ReprocesoCfe";
 
 // TODO: reemplazar por el portal de trámites que indique IDC
 const CFE_PORTAL_URL = "https://www.cfe.mx";
 const MAX_MB = 20;
 
 type Props = {
-  expediente: { id: string; folio: string; data_json: string; gates: Array<{ gate_code: string; status: string }> } | null;
+  expediente: { id: string; folio: string; data_json: string; gates: Array<{ gate_code: string; status: string }>; reproceso_cfe: { fecha: string; mensaje: string; requirementCodes: string[] } | null } | null;
   review: RequisitoCliente[];
   formats: Array<{ document_id: string; document_type: string; status: string; version_id: string; version_number: number; original_filename: string }>;
 };
@@ -71,6 +72,7 @@ export default function LocalDocumentos({ expediente, review, formats }: Props) 
       </Panel>
 
       <Panel title="Trámite: interconexión FV en MT">
+        {expediente.reproceso_cfe && <ReprocesoCfe reproceso={expediente.reproceso_cfe} requirements={review} gestor={false} ocupado={cargando !== null} subir={(item, file) => { const requisito = review.find((r) => r.requirement_code === item.requirement_code); if (requisito) void subir(requisito, file); }} />}
         <p className="text-sm font-bold">Documentos {subidos} de {documentos.length} subidos</p>
         <div className="my-2 h-4 overflow-hidden rounded bg-[#0d1f33]" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Documentos subidos">
           <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />

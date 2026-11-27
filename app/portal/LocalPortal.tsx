@@ -10,6 +10,7 @@ type Props = {
   expediente: {
     id: string; folio: string; tramite: string; status: string;
     privacy_accepted_at: string | null;
+    reproceso_cfe: { fecha: string; mensaje: string; requirementCodes: string[] } | null;
     gates: Array<{ gate_code: string; status: string }>;
     requirements: Array<{ requirement_code: string; name: string; status: string }>;
   } | null;
@@ -37,6 +38,7 @@ export default function LocalPortal({ expediente, review }: Props) {
       urgente: true,
       href: "/portal/formatos",
     }));
+  if (expediente.reproceso_cfe) notificaciones.unshift({ id: "cfe-reproceso", titulo: `CFE pidió correcciones el ${expediente.reproceso_cfe.fecha.slice(0, 10)}`, archivo: expediente.reproceso_cfe.mensaje, urgente: true, href: "/portal/formatos" });
   const pendientes: Aviso[] = [
     ...(!expediente.privacy_accepted_at ? [{ id: "aviso", titulo: "Aceptar el aviso de privacidad", archivo: "Necesario para que IDC inicie tu trámite", urgente: true }] : []),
     ...review

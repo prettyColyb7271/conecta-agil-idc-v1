@@ -31,7 +31,7 @@ const allowedTypes = new Map([
 ]);
 const externalEventTypes = new Set(["firma_presencial", "ingreso_acuse", "resolucion_cfe", "contrato", "uiie", "certificado_uiie", "medidor", "interconexion", "alta_comercial"]);
 
-type RequirementRow = { id: string; status: string; document_id: string | null; version_id: string | null; observed_reason: string | null; requirement_code: string; name: string; tipo: string; integra: string; sensible: number; validaciones: string; reutiliza_code?: string | null };
+type RequirementRow = { id: string; status: string; document_id: string | null; version_id: string | null; observed_reason: string | null; requirement_code: string; name: string; tipo: string; integra: string; sensible: number; validaciones: string; reutiliza_code?: string | null; updated_at?: string };
 type DocumentRow = { id: string; requirement_id: string; status: string };
 
 function assertVisible(user: ScopeUser, expedienteId: string): NonNullable<ReturnType<typeof getExpediente>> {
@@ -246,7 +246,7 @@ export function listRequirementReview(user: AuthUser, expedienteId: string) {
   assertVisible(user, expedienteId);
   const database = getDatabase();
   const rows = database.prepare(`
-    SELECT er.id, er.requirement_code, er.status, er.document_id, er.version_id, er.observed_reason,
+    SELECT er.id, er.requirement_code, er.status, er.document_id, er.version_id, er.observed_reason, er.updated_at,
            rc.name, rc.tipo, rc.integra, rc.sensible, rc.validaciones, rc.reutiliza_code
     FROM expediente_requirements er JOIN requirement_catalog rc ON rc.code = er.requirement_code
     WHERE er.expediente_id = ? AND (er.requirement_code LIKE 'R%' OR er.requirement_code LIKE 'U%') ORDER BY er.requirement_code
@@ -255,7 +255,7 @@ export function listRequirementReview(user: AuthUser, expedienteId: string) {
     ...row,
     observed_reason: isIdc(user) ? row.observed_reason : null,
     versions: row.document_id ? database.prepare("SELECT id, version_number, original_filename, size_bytes, sha256, change_reason, created_at, (author_id = ?) AS uploaded_by_current_user FROM document_versions WHERE document_id = ? ORDER BY version_number DESC").all(user.id, row.document_id) : [],
-    observations: database.prepare("SELECT id, visibility, body, created_at FROM observations WHERE requirement_id = ? AND (visibility = 'cliente' OR ? = 1) ORDER BY created_at DESC").all(row.id, isIdc(user) ? 1 : 0) as Array<{ id: string; visibility: "cliente" | "interno_idc"; body: string; created_at: string }>,
+    observations: database.prepare("SELECT id, visibility, body, created_at FROM observations WHERE requirement_id = ? AND (visibility = 'cliente' OR ? = 1) ORDER BY created_at DESC, rowid DESC").all(row.id, isIdc(user) ? 1 : 0) as Array<{ id: string; visibility: "cliente" | "interno_idc"; body: string; created_at: string }>,
   }));
 }
 

@@ -8,6 +8,7 @@ export type RequisitoCliente = {
   integra: string;
   validaciones: string;
   reutiliza_code: string | null;
+  updated_at?: string;
   observations: Array<{ visibility: string; body: string }>;
 };
 type Gate = { gate_code: string; status: string };
