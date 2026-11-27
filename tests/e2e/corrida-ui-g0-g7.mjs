@@ -176,6 +176,11 @@ try {
   const page = await fetch(`${base}/portal/formatos`, { headers: { cookie: clientCookies } });
   const html = await page.text();
   ok("portal muestra feedback y responsable IDC sin nota interna", page.ok && html.includes("Actualizar recibo") && html.includes("Lo corrige IDC") && !html.includes("Nota interna confidencial"));
+  const allRequirementsPanel = html.match(/<details\b[^>]*data-testid="reproceso-documentos-completos"[^>]*>[\s\S]*?<\/details>/)?.[0] ?? "";
+  const requirementRows = [...allRequirementsPanel.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].slice(1);
+  const requirementCodes = requirementRows.map(([, row]) => row.replace(/<!--.*?-->/gs, "").replace(/<[^>]+>/g, " ").match(/\bR\d{2}\b/)?.[0]);
+  ok("portal despliega R01–R11 en 11 filas y en orden", page.ok && requirementRows.length === 11 && requirementCodes.join(",") === "R01,R02,R03,R04,R05,R06,R07,R08,R09,R10,R11");
+  ok("nota interna ausente en el panel completo del cliente", page.ok && Boolean(allRequirementsPanel) && !allRequirementsPanel.includes("Nota interna confidencial"));
   ok("cliente no puede subir R03", (await cliente.post(`${R}/documents`, form({ requirementCode: "R03" }, "R03"))).status === 403);
   const mailFiles = fs.readdirSync(path.join(dataDir, "outbox"));
   const mails = mailFiles.map((name) => JSON.parse(fs.readFileSync(path.join(dataDir, "outbox", name), "utf8")));

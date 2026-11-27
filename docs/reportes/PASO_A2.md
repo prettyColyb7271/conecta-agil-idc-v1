@@ -108,3 +108,23 @@ Ejecutadas en la copia aislada con datos ficticios y sin usar :3140; todas final
 La corrida comprueba la selección R09/R03, validación por otro gestor, privacidad de notas en portal y API, rechazo de carga de R03 por el cliente, correo genérico, conservación de firmas, nueva firma al observar R01 y rechazo del acuse anterior. Revisión visual con datos ficticios: [gestor](img/a2b-reproceso-gestor.png) y [cliente](img/a2b-reproceso-cliente.png).
 
 `:3140` se reinició con `npm run start:local`; `/api/health` respondió 200. No se ejecutó seed ni migración sobre datos reales. Pendiente: revisión del supervisor; no se hizo push ni merge. El envío del correo depende de la configuración existente y su fallo se comunica al gestor.
+
+## A2c · Vista completa del reproceso
+
+`components/ReprocesoCfe.tsx` conserva la tabla resumida del reproceso y agrega el desplegable **“Ver los 11 documentos”**. Al expandirlo, muestra R01–R11 en orden, su semáforo, la última retroalimentación visible, quién debe corregir y la fecha de actualización. Las notas internas se renderizan solo en el panel del gestor; la vista del cliente no incluye esa columna ni el contenido interno. Se reutilizan los requisitos y las observaciones ya entregados por las rutas existentes; no se agregó almacenamiento nuevo.
+
+`tests/e2e/corrida-ui-g0-g7.mjs` comprueba las 11 filas en orden y que una nota interna confidencial no aparezca en el panel expandido del cliente, además de las aserciones de privacidad ya existentes para el portal y su API.
+
+### Verificación A2c
+
+Ejecutada en la copia aislada `paso-a2c-validation`, con modo local, datos ficticios y sin usar ni reiniciar `:3140`.
+
+| Prueba | Resultado |
+|---|---|
+| `npm run lint` | ✅ |
+| `npx --no-install tsc --noEmit` | ✅ |
+| `npm run plantillas:check` | ✅ 5 plantillas DOCX y F-01 PDF |
+| `npm run build` | ✅ |
+| `npm run test:e2e:isolated` | ✅ 614 comprobaciones / 0 fallos; `corrida-ui-g0-g7.mjs`: 228 / 0 |
+
+No se hizo push ni merge. Pendiente la revisión del supervisor.
