@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { etiquetaGate, traducirGateMensaje } from "@/lib/gate-display";
+import { sumarMesesCalendario } from "@/lib/fechas";
 
 type Requirement = { requirement_code: string; name: string; status: string; version_id: string | null };
 type Evento = {
@@ -62,7 +64,7 @@ function Formulario({ tipo, expedienteId, ocupado, setOcupado, notificar, refres
   const [solicitud, setSolicitud] = useState("");
   const [resultado, setResultado] = useState("favorable");
   const [subgate, setSubgate] = useState<File | null>(null);
-  const limite = fecha ? new Date(Date.parse(`${fecha}T00:00:00Z`) + 60 * 86400000).toISOString().slice(0, 10) : "";
+  const limite = fecha ? sumarMesesCalendario(`${fecha}T00:00:00.000Z`, 2).toISOString().slice(0, 10) : "";
 
   async function registrar() {
     if (!archivo) return;
@@ -81,12 +83,12 @@ function Formulario({ tipo, expedienteId, ocupado, setOcupado, notificar, refres
       }
       const response = await fetch(`/api/expedientes/${expedienteId}/documents`, { method: "POST", body: data });
       const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error ?? `Error HTTP ${response.status}.`);
+      if (!response.ok) throw new Error(traducirGateMensaje(body.error ?? `Error HTTP ${response.status}.`));
       notificar({ ok: true, text: `${LABELS[tipo]} registrado.` });
       alTerminar?.();
       await refrescar();
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible registrar la evidencia." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible registrar la evidencia.") });
     } finally { setOcupado(null); }
   }
 
@@ -100,8 +102,8 @@ function Formulario({ tipo, expedienteId, ocupado, setOcupado, notificar, refres
       </>}
       {tipo === "resolucion_cfe" && <>
         <label className="text-xs font-bold">Resultado<select value={resultado} onChange={(event) => setResultado(event.target.value)} className={input}><option value="favorable">Favorable</option><option value="condicionado">Condicionado</option><option value="no_favorable">No favorable</option></select></label>
-        <p className="text-xs sm:col-span-2">Vigencia: 2 meses (60 días). Fecha límite: <b>{limite || "selecciona la fecha"}</b>.</p>
-        {resultado === "no_favorable" && <p className="text-xs font-bold text-red-800 sm:col-span-2">Un oficio no favorable no permite cerrar G4.</p>}
+        <p className="text-xs sm:col-span-2">Vigencia: 2 meses calendario. Fecha límite: <b>{limite || "selecciona la fecha"}</b>.</p>
+        {resultado === "no_favorable" && <p className="text-xs font-bold text-red-800 sm:col-span-2">Un oficio no favorable no permite cerrar {etiquetaGate("G4")}.</p>}
         {resultado === "condicionado" && <label className="text-xs font-bold">PDF del estudio o aportación del subgate<input required type="file" accept=".pdf,application/pdf" onChange={(event) => setSubgate(event.target.files?.[0] ?? null)} className="mt-1 block w-full font-normal" /><span className="block font-normal">Ambos archivos y el formulario deben sumar menos de 21 MB.</span></label>}
       </>}
       <label className="text-xs font-bold">PDF de {LABELS[tipo]}<input required type="file" accept=".pdf,application/pdf" onChange={(event) => setArchivo(event.target.files?.[0] ?? null)} className="mt-1 block w-full font-normal" /></label>
@@ -145,18 +147,18 @@ export default function RegistrarEventos(props: Props) {
     const description = eventType === "cfe_incompleto" ? motivo.trim() : "Cierre revisado";
     if (!description) return;
     if (eventType === "cfe_incompleto" && (!seleccion.length || seleccion.some((code) => !feedback[code]?.trim()))) return;
-    if (eventType === "cfe_incompleto" && !window.confirm("CFE reporta incompleto: se reabrirá G1, se bloquearán G2 a G7, solo los requisitos seleccionados quedarán observados y se reiniciará el plazo de CFE. ¿Continuar?")) return;
+    if (eventType === "cfe_incompleto" && !window.confirm(`CFE reporta incompleto: se reabrirá ${etiquetaGate("G1")}, se bloquearán las etapas posteriores a ${etiquetaGate("G1")}, solo los requisitos seleccionados quedarán observados y se reiniciará el plazo de CFE. ¿Continuar?`)) return;
     setOcupado(eventType);
     try {
       const response = await fetch(`/api/expedientes/${expedienteId}/gates`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "event", eventType, description, ...(eventType === "cfe_incompleto" ? { requirementCodes: seleccion, feedback, internalNotes } : {}) }) });
       const body = await response.json() as { error?: string; warning?: string };
-      if (!response.ok) throw new Error(body.error ?? `Error HTTP ${response.status}.`);
+      if (!response.ok) throw new Error(traducirGateMensaje(body.error ?? `Error HTTP ${response.status}.`));
       setMotivo("");
-      notificar({ ok: !body.warning, text: body.warning ?? (eventType === "cierre" ? "Cierre registrado." : "Reproceso registrado; G1 se reabrió.") });
+      notificar({ ok: !body.warning, text: body.warning ?? (eventType === "cierre" ? "Cierre registrado." : `Reproceso registrado; ${etiquetaGate("G1")} se reabrió.`) });
       if (eventType === "cfe_incompleto") alReprocesar();
       await refrescar();
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible registrar el evento." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible registrar el evento.") });
     } finally { setOcupado(null); }
   }
 
@@ -173,9 +175,9 @@ export default function RegistrarEventos(props: Props) {
           {abierto && tipo === "resolucion_cfe" && registrado && !otroOficio && <button type="button" onClick={() => setOtroOficio(true)} className="text-xs underline">Registrar otro oficio</button>}
         </div>;
       })}
-      {gate === "G7" && <div className="text-xs">{ultimo(eventos, "cierre") ? <p>✓ Cierre registrado.</p> : abierto && <button type="button" disabled={ocupado !== null || tipos.some((tipo) => !ultimo(eventos, tipo)?.document_id)} onClick={() => void eventoSinDocumento("cierre")} className={boton}>Registrar cierre</button>}<p className="mt-1 font-semibold">G7 lo cierra un Gestor IDC distinto del responsable.</p></div>}
-      <div className="text-xs"><p className="font-bold">Qué falta para cerrar {gate}</p>{faltantes.length ? <ul className="list-inside list-disc">{faltantes.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No falta nada.</p>}</div>
-      {abierto && <button type="button" disabled={ocupado !== null || faltantes.length > 0 || (gate === "G7" && responsableActual)} onClick={() => void cerrar(gate)} className={boton}>{gate === "G7" && responsableActual ? "Lo cierra otro Gestor IDC" : ocupado === gate ? "Cerrando…" : `Cerrar ${gate}`}</button>}
+      {gate === "G7" && <div className="text-xs">{ultimo(eventos, "cierre") ? <p>✓ Cierre registrado.</p> : abierto && <button type="button" disabled={ocupado !== null || tipos.some((tipo) => !ultimo(eventos, tipo)?.document_id)} onClick={() => void eventoSinDocumento("cierre")} className={boton}>Registrar cierre</button>}<p className="mt-1 font-semibold">{etiquetaGate("G7")} lo cierra un Gestor IDC distinto del responsable.</p></div>}
+      <div className="text-xs"><p className="font-bold">Qué falta para cerrar {etiquetaGate(gate)}</p>{faltantes.length ? <ul className="list-inside list-disc">{faltantes.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No falta nada.</p>}</div>
+      {abierto && <button type="button" disabled={ocupado !== null || faltantes.length > 0 || (gate === "G7" && responsableActual)} onClick={() => void cerrar(gate)} className={boton}>{gate === "G7" && responsableActual ? "Lo cierra otro Gestor IDC" : ocupado === gate ? "Cerrando…" : `Cerrar ${etiquetaGate(gate)}`}</button>}
       {gate === "G3" && abierto && <form className="space-y-2 border-t border-red-300 pt-3" onSubmit={(event) => { event.preventDefault(); void eventoSinDocumento("cfe_incompleto"); }}><p className="text-xs font-bold text-red-800">CFE reporta incompleto · reproceso destructivo</p><label className="block text-xs font-bold">Mensaje general al cliente<textarea required value={motivo} onChange={(event) => setMotivo(event.target.value)} className={input} /></label>
         {Array.from({ length: 11 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`).map((code) => <div key={code} className="rounded bg-red-50 p-2 text-xs">
           <label className="font-bold"><input type="checkbox" checked={seleccion.includes(code)} onChange={(event) => setSeleccion((current) => event.target.checked ? [...current, code] : current.filter((value) => value !== code))} /> {code} · {r(code)?.name}</label>

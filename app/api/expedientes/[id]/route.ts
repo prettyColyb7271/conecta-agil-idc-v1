@@ -1,4 +1,4 @@
-import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
 import { assignResponsable, getExpediente, updateExpedienteData, updateExpedienteDataByIdc, ValidationError, type ExpedienteData } from "@/lib/data/expedientes";
 import { readJson, RequestInputError } from "@/lib/http";
 
@@ -11,6 +11,16 @@ export async function GET(_request: Request, { params }: Params) {
   if (!user || user.role === "admin_seguridad") return Response.json({ error: "No autorizado." }, { status: 403 });
   const { id } = await params;
   const expediente = getExpediente(user, id);
+  if (expediente) {
+    auditEvent({
+      actorId: user.id,
+      actorRole: user.role,
+      eventType: "consulta_detalle_expediente",
+      entityType: "expediente",
+      entityId: id,
+      expedienteId: id,
+    });
+  }
   return expediente ? Response.json({ expediente }) : Response.json({ error: "Expediente no encontrado." }, { status: 404 });
 }
 

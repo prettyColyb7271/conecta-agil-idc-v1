@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { AuthUser } from "@/lib/auth";
+import { auditEvent, type AuthUser } from "@/lib/auth";
 import { listExpedientes } from "@/lib/data/expedientes";
 import { listRequirementReview } from "@/lib/data/documents";
 import { listGeneratedFormats } from "@/lib/data/formats";
@@ -9,6 +9,16 @@ import { listGeneratedFormats } from "@/lib/data/formats";
 // no se pueden enviar a un Client Component.
 export function cargarPortalCliente(user: AuthUser) {
   const expediente = listExpedientes(user)[0] ?? null;
+  if (expediente) {
+    auditEvent({
+      actorId: user.id,
+      actorRole: user.role,
+      eventType: "consulta_detalle_expediente",
+      entityType: "expediente",
+      entityId: expediente.id,
+      expedienteId: expediente.id,
+    });
+  }
   const review = expediente ? listRequirementReview(user, expediente.id).map((item) => ({
     requirement_code: item.requirement_code,
     name: item.name,

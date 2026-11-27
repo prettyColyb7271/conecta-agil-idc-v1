@@ -6,6 +6,7 @@ import { ETAPAS, REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA, esPostInstal
 import { encabezadoGate, gateActual } from "@/lib/semaforo";
 import RegistrarEventos from "@/components/RegistrarEventos";
 import ReprocesoCfe from "@/components/ReprocesoCfe";
+import { etiquetaGate, traducirGateMensaje } from "@/lib/gate-display";
 
 type Requirement = {
   requirement_code: string;
@@ -146,7 +147,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       ];
       const bodies = [review, gateData, formatData, expedienteData];
       const fallo = responses.findIndex((response) => !response.ok);
-      if (fallo !== -1) throw new Error(bodies[fallo].error ?? "No fue posible consultar el expediente.");
+      if (fallo !== -1) throw new Error(traducirGateMensaje(bodies[fallo].error ?? "No fue posible consultar el expediente."));
       if (!Array.isArray(review.requirements) || !Array.isArray(formatData.formats) || !Array.isArray(expedienteData.expediente?.external_events) || !gatesCompletos(gateData.gates)) {
         throw new Error("La respuesta del expediente está incompleta.");
       }
@@ -165,7 +166,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       if (solicitud !== solicitudDetalle.current || id !== seleccionActual.current) return;
       setCargadoId(id);
       setEstadoCarga("error");
-      setErrorCarga(error instanceof Error ? error.message : "Error inesperado al consultar el expediente.");
+      setErrorCarga(traducirGateMensaje(error instanceof Error ? error.message : "Error inesperado al consultar el expediente."));
     }
   }, []);
 
@@ -221,7 +222,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       });
       const body = await response.json().catch(() => ({})) as { error?: string };
       const verbo = action === "validate" ? "validado" : action === "observe" ? "observado" : "marcado como no aplica";
-      notificar(response.ok ? { ok: true, text: `${code} ${verbo}.` } : { ok: false, text: body.error ?? "No fue posible actualizar." });
+      notificar(response.ok ? { ok: true, text: `${code} ${verbo}.` } : { ok: false, text: traducirGateMensaje(body.error ?? "No fue posible actualizar.") });
       if (response.ok) { setForm(null); await refrescar(); }
     } finally {
       setOcupado(null);
@@ -230,7 +231,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
 
   async function respuesta<T>(response: Response): Promise<T> {
     const body = await response.json() as T & { error?: string };
-    if (!response.ok) throw new Error(body.error ?? `Error HTTP ${response.status}.`);
+    if (!response.ok) throw new Error(traducirGateMensaje(body.error ?? `Error HTTP ${response.status}.`));
     return body;
   }
 
@@ -245,7 +246,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       notificar({ ok: true, text: `${formatCode} marcado para firma.` });
       await refrescar();
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible marcar el formato." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible marcar el formato.") });
     } finally {
       setOcupado(null);
     }
@@ -262,7 +263,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       notificar({ ok: true, text: `${requirementCode}: escaneo recibido. Lo verifica otro Gestor IDC.` });
       await refrescar();
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible subir el escaneo." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible subir el escaneo.") });
     } finally {
       setOcupado(null);
     }
@@ -279,7 +280,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       notificar({ ok: true, text: `${requirementCode}: escaneo verificado.` });
       await refrescar();
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible verificar el escaneo." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible verificar el escaneo.") });
     } finally {
       setOcupado(null);
     }
@@ -315,7 +316,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       notificar({ ok: true, text: "Firma presencial registrada." });
       await refrescar();
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible registrar la firma." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible registrar la firma.") });
       await cargarDetalle(selId);
     } finally {
       firmaEnCurso.current = false;
@@ -331,18 +332,17 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       data.set("file", file);
       const response = await fetch(`/api/expedientes/${selId}/documents`, { method: "POST", body: data });
       const body = await response.json().catch(() => ({})) as { error?: string };
-      notificar(response.ok ? { ok: true, text: `${code}: documento cargado. Otro Gestor IDC debe validarlo.` } : { ok: false, text: body.error ?? "No fue posible cargar el documento." });
+      notificar(response.ok ? { ok: true, text: `${code}: documento cargado. Otro Gestor IDC debe validarlo.` } : { ok: false, text: traducirGateMensaje(body.error ?? "No fue posible cargar el documento.") });
       if (response.ok) await refrescar();
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible cargar el documento." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible cargar el documento.") });
     } finally {
       setOcupado(null);
     }
   }
 
   async function cerrarGate(code: string) {
-    const nombre = ETAPAS.find((etapa) => etapa.code === code)?.nombre ?? code;
-    if (!window.confirm(`¿Cerrar ${code} · ${nombre}? Se abrirá el siguiente gate.`)) return;
+    if (!window.confirm(`¿Cerrar ${etiquetaGate(code)}? Se abrirá la etapa siguiente.`)) return;
     setOcupado(code);
     try {
       const response = await fetch(`/api/expedientes/${selId}/gates`, {
@@ -352,7 +352,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
       });
       const body = await response.json().catch(() => ({})) as { error?: string; gates?: Gate[] };
       if (selId !== seleccionActual.current) return;
-      notificar(response.ok ? { ok: true, text: `${code} cerrado.` } : { ok: false, text: body.error ?? "No fue posible cerrar el gate." });
+      notificar(response.ok ? { ok: true, text: `${etiquetaGate(code)} cerrado.` } : { ok: false, text: traducirGateMensaje(body.error ?? "No fue posible cerrar el gate.") });
       if (response.ok) {
         if (!gatesCompletos(body.gates)) {
           notificar({ ok: false, text: "La respuesta del expediente está incompleta." });
@@ -365,7 +365,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
         await cargarPendientes();
       }
     } catch (error) {
-      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible cerrar el gate." });
+      notificar({ ok: false, text: traducirGateMensaje(error instanceof Error ? error.message : "No fue posible cerrar el gate.") });
     } finally {
       setOcupado(null);
     }
@@ -380,7 +380,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
         body: JSON.stringify({ action: "generate", formatCode: code }),
       });
       const body = await response.json().catch(() => ({})) as { error?: string };
-      notificar(response.ok ? { ok: true, text: `${code} generado.` } : { ok: false, text: body.error ?? "No fue posible generar el formato." });
+      notificar(response.ok ? { ok: true, text: `${code} generado.` } : { ok: false, text: traducirGateMensaje(body.error ?? "No fue posible generar el formato.") });
       if (response.ok) await cargarDetalle(selId);
     } finally {
       setOcupado(null);
@@ -417,7 +417,6 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
 
   if (!expedientes.length) return <Panel title="Revisión del expediente"><p className="text-sm">No hay expedientes para revisar.</p></Panel>;
 
-  const gateIndex = (code: string) => ETAPAS.findIndex((etapa) => etapa.code === code);
   const avanceEstado = cargadoId === selId ? estadoCarga : "cargando";
   const statusGate = (code: string) => avanceEstado === "listo" ? gates.find((gate) => gate.gate_code === code)?.status ?? "bloqueado" : "bloqueado";
   const etapaSel = ETAPAS.find((etapa) => etapa.code === gateSel) ?? ETAPAS[0];
@@ -502,7 +501,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
         <div className="mx-auto mt-4 max-w-4xl rounded-sm bg-[#b6cde3] p-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-bold">Gate {gateIndex(etapaSel.code) + 1} · {etapaSel.code} · {etapaSel.nombre}</p>
+              <p className="text-sm font-bold">{etiquetaGate(etapaSel.code)}</p>
               <p className="text-xs text-slate-700">{etapaSel.pasos} · {etapaSel.descripcion}</p>
             </div>
             <span className="flex items-center gap-2 text-xs font-bold">
@@ -533,7 +532,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
           {etapaSel.code === "G2" && (
             <div className="mt-4 space-y-3 rounded bg-white p-3">
               <p className="text-sm font-bold">Firma presencial y escaneos</p>
-              {!g1Cerrado && <p className="text-xs">Disponible después de cerrar G1.</p>}
+              {!g1Cerrado && <p className="text-xs">Disponible después de cerrar {etiquetaGate("G1")}.</p>}
               {g1Cerrado && FIRMAS.map(({ formato: formatCode, requisito }) => {
                 const doc = formato(formatCode);
                 const req = requirements.find((item) => item.requirement_code === requisito);
@@ -575,7 +574,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
                 </form>
               )}
               <div className="text-xs">
-                <p className="font-bold">Qué falta para cerrar G2</p>
+                <p className="font-bold">Qué falta para cerrar {etiquetaGate("G2")}</p>
                 {faltantesG2.length ? <ul className="list-inside list-disc">{faltantesG2.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No falta nada.</p>}
               </div>
             </div>
@@ -604,7 +603,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
               onClick={() => void cerrarGate(etapaSel.code)}
               className="mt-3 rounded bg-[#0d1f33] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#16345a] disabled:opacity-60"
             >
-              {ocupado === etapaSel.code ? "Cerrando…" : `Cerrar ${etapaSel.code}`}
+              {ocupado === etapaSel.code ? "Cerrando…" : `Cerrar ${etiquetaGate(etapaSel.code)}`}
             </button>
           )}
         </div>
@@ -634,7 +633,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
         </Panel>
 
         <Panel title="Formatos del expediente">
-          {!g1Cerrado && <p className="mb-2 text-xs font-bold text-slate-700">Se generan con los datos capturados al cerrar G1 (listo para firma).</p>}
+          {!g1Cerrado && <p className="mb-2 text-xs font-bold text-slate-700">Se generan con los datos capturados al cerrar {etiquetaGate("G1")} (listo para firma).</p>}
           <div className="grid gap-2 sm:grid-cols-2">
             {FORMATOS.map((f) => {
               const doc = formato(f.code);
@@ -648,7 +647,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
                     {doc && <a href={`/api/documents/${doc.document_id}`} className="rounded bg-[#0d1f33] px-2 py-1 text-xs font-semibold text-white hover:bg-[#16345a]">Descargar</a>}
                     <button
                       disabled={!g1Cerrado || ocupado === f.code}
-                      title={g1Cerrado ? undefined : "Disponible al cerrar G1"}
+                      title={g1Cerrado ? undefined : `Disponible al cerrar ${etiquetaGate("G1")}`}
                       onClick={() => void generar(f.code)}
                       className="rounded bg-[#5885b1] px-2 py-1 text-xs font-semibold text-white hover:bg-[#3d6a99] disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -746,7 +745,7 @@ export default function LocalGestorReview({ usuarioId }: { usuarioId: string }) 
                     <div>
                       <p><b>Checklist:</b> {item.validaciones}</p>
                       <p className="mt-1"><b>Integra:</b> {item.integra} · <b>Tipo:</b> {item.tipo} · <b>Sensible:</b> {item.sensible ? "sí" : "no"}</p>
-                      {esPostInstalacion(item.requirement_code) && <p className="mt-1 font-semibold text-sky-900">Se carga después de instalar; se exige al cerrar G3 (ingreso a CFE), no para la cita de firma.</p>}
+                      {esPostInstalacion(item.requirement_code) && <p className="mt-1 font-semibold text-sky-900">Se carga después de instalar; se exige al cerrar {etiquetaGate("G3")}, no para la cita de firma.</p>}
                     </div>
                     <div>
                       <p className="font-bold">Versiones</p>

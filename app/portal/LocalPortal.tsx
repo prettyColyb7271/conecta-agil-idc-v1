@@ -5,6 +5,9 @@ import { TRAMITE_FV_MT, TRAMITE_FV_MT_LABEL } from "@/lib/etapas";
 import { documentosDelCliente, type RequisitoCliente } from "@/lib/portal-cliente";
 import { gateActual, semaforoExpediente } from "@/lib/semaforo";
 import { Panel } from "@/components/ui";
+import { alertaVigenciaOficio } from "@/lib/vigencia-oficio";
+import AlertaVigenciaOficioBanner from "@/components/AlertaVigenciaOficio";
+import { traducirGateMensaje } from "@/lib/gate-display";
 
 type Props = {
   expediente: {
@@ -12,6 +15,7 @@ type Props = {
     privacy_accepted_at: string | null;
     reproceso_cfe: { fecha: string; mensaje: string; requirementCodes: string[] } | null;
     gates: Array<{ gate_code: string; status: string }>;
+    external_events?: Array<{ event_type: string; event_date: string; sequence: number; resultado: string | null; vence_at: string | null }>;
     requirements: Array<{ requirement_code: string; name: string; status: string }>;
   } | null;
   review: RequisitoCliente[];
@@ -25,7 +29,7 @@ export default function LocalPortal({ expediente, review }: Props) {
   async function aceptarAviso() {
     const response = await fetch(`/api/expedientes/${current.id}/privacy`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: "aviso-privacidad-v1" }) });
     if (response.ok) window.location.reload();
-    else window.alert(((await response.json().catch(() => ({}))) as { error?: string }).error ?? "No fue posible aceptar el aviso.");
+    else window.alert(traducirGateMensaje(((await response.json().catch(() => ({}))) as { error?: string }).error ?? "No fue posible aceptar el aviso."));
   }
 
   const { documentos, puedeSubir } = documentosDelCliente(review, expediente.gates);
@@ -50,6 +54,19 @@ export default function LocalPortal({ expediente, review }: Props) {
   ];
   const semaforo = semaforoExpediente(expediente.gates, expediente.requirements);
   const tramite = expediente.tramite === TRAMITE_FV_MT ? TRAMITE_FV_MT_LABEL : expediente.tramite;
+  const alerta = alertaVigenciaOficio(expediente.gates, expediente.external_events ?? []);
+  const extra = (
+    <>
+      {alerta && <AlertaVigenciaOficioBanner alerta={alerta} />}
+      {!expediente.privacy_accepted_at && (
+        <div className="rounded border border-amber-500 bg-amber-50 p-3 text-sm text-[#0d1f33]">
+          <p><b>Aviso de privacidad (texto pendiente de confirmar con IDC)</b></p>
+          <p className="mt-1">Acéptalo para que IDC pueda iniciar tu trámite.</p>
+          <button onClick={() => void aceptarAviso()} className="mt-2 rounded bg-[#0d1f33] px-3 py-1.5 font-semibold text-white">Aceptar aviso</button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <PortalInicio
@@ -58,13 +75,7 @@ export default function LocalPortal({ expediente, review }: Props) {
       notificaciones={notificaciones}
       pendientes={pendientes}
       procesos={[{ id: "fv", nombre: "Interconexión FV en MT", archivo: expediente.folio, estatus: semaforo.estatus, detalle: semaforo.detalle, gate: gateActual(expediente.gates) }]}
-      extra={!expediente.privacy_accepted_at && (
-        <div className="rounded border border-amber-500 bg-amber-50 p-3 text-sm text-[#0d1f33]">
-          <p><b>Aviso de privacidad (texto pendiente de confirmar con IDC)</b></p>
-          <p className="mt-1">Acéptalo para que IDC pueda iniciar tu trámite.</p>
-          <button onClick={() => void aceptarAviso()} className="mt-2 rounded bg-[#0d1f33] px-3 py-1.5 font-semibold text-white">Aceptar aviso</button>
-        </div>
-      )}
+      extra={extra}
     />
   );
 }

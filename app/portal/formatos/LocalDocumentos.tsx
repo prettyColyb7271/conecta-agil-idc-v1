@@ -6,6 +6,7 @@ import { Dot, Panel } from "@/components/ui";
 import CapturaDatos from "@/components/portal/CapturaDatos";
 import { ESTADO_DOCUMENTO, LISTOS, documentosDelCliente, type RequisitoCliente } from "@/lib/portal-cliente";
 import ReprocesoCfe from "@/components/ReprocesoCfe";
+import { traducirGateMensaje } from "@/lib/gate-display";
 
 // TODO: reemplazar por el portal de trámites que indique IDC
 const CFE_PORTAL_URL = "https://www.cfe.mx";
@@ -47,7 +48,7 @@ export default function LocalDocumentos({ expediente, review, formats }: Props) 
       form.set("file", file);
       const response = await fetch(`/api/expedientes/${current.id}/documents`, { method: "POST", body: form });
       const body = await response.json().catch(() => ({})) as { error?: string };
-      setAviso(response.ok ? { ok: true, text: `${item.name}: archivo recibido. IDC lo revisará.` } : { ok: false, text: body.error ?? "No fue posible subir el archivo." });
+      setAviso(response.ok ? { ok: true, text: `${item.name}: archivo recibido. IDC lo revisará.` } : { ok: false, text: traducirGateMensaje(body.error ?? "No fue posible subir el archivo.") });
       if (response.ok) router.refresh();
     } catch {
       setAviso({ ok: false, text: "No hay conexión con el servidor. Inténtalo de nuevo." });

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Panel } from "@/components/ui";
+import { traducirGateMensaje } from "@/lib/gate-display";
 
 const input = "w-full rounded border border-[#1b3d66] bg-white px-3 py-2 text-sm text-[#0d1f33]";
 
@@ -24,7 +25,7 @@ export default function CapturaDatos({ expedienteId, dataJson }: { expedienteId:
     setError(""); setMessage("");
     const response = await fetch(`/api/expedientes/${expedienteId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ data }) });
     const body = await response.json();
-    if (!response.ok) setError(body.error ?? "No fue posible guardar los datos.");
+    if (!response.ok) setError(traducirGateMensaje(body.error ?? "No fue posible guardar los datos."));
     else setMessage("Datos guardados correctamente.");
   }
   return (

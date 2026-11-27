@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Dot, ESTATUS_LABEL, Panel, SmallButton } from "@/components/ui";
 import { GATES, expediente as expedienteDemo, notificaciones as notificacionesDemo, pendientes as pendientesDemo, procesos as procesosDemo, type Estatus } from "@/data/mock";
+import { ETAPAS } from "@/lib/etapas";
 
 export type Aviso = { id: string; titulo: string; archivo: string; urgente: boolean; hora?: string; href?: string };
 export type Proceso = { id: string; nombre: string; archivo: string; estatus: Estatus; detalle: string; gate: number };
@@ -127,7 +128,7 @@ export default function PortalInicio({
                     <span className="block text-xs text-slate-500">{p.detalle}</span>
                   </span>
                 </span>
-                <span className="font-bold">Gate {p.gate} de {GATES.length}</span>
+                <span className="font-bold">Gate {p.gate} · {ETAPAS[p.gate - 1]?.nombre ?? "Etapa"}</span>
                 <SmallButton active={sel === p.id} onClick={() => setSel(p.id)}>Más detalles</SmallButton>
               </div>
             ))}
