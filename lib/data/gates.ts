@@ -166,7 +166,10 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
     const subgate = getDatabase().prepare("SELECT expediente_id FROM documents WHERE id = ?").get(input.subgateDocumentId) as { expediente_id: string } | undefined;
     if (!subgate || subgate.expediente_id !== expedienteId) throw new GateValidationError("La evidencia del subgate no pertenece al expediente.");
   }
-  const id = crypto.randomUUID();
+  const existingSignature = input.eventType === "firma_presencial" && input.documentId
+    ? getDatabase().prepare("SELECT id FROM external_events WHERE expediente_id = ? AND event_type = 'firma_presencial' AND document_id = ? ORDER BY created_at DESC LIMIT 1").get(expedienteId, input.documentId) as { id: string } | undefined
+    : undefined;
+  const id = existingSignature?.id ?? crypto.randomUUID();
   const insertEvent = () => getDatabase().prepare("INSERT INTO external_events (id, expediente_id, event_type, event_date, description, document_id, created_by, created_at, medio, solicitud_numero, vigencia_meses, vence_at, resultado, subgate_requerido, subgate_document_id, reinicio_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, expedienteId, input.eventType, input.eventDate ?? now, input.description.trim(), input.documentId ?? null, user.id, now, input.medio ?? null, input.solicitudNumero ?? null, input.vigenciaMeses ?? null, expiresAt ?? null, input.resultado ?? null, input.subgateRequerido ? 1 : 0, input.subgateDocumentId ?? null, input.eventType === "cfe_incompleto" ? now : null);
   if (input.eventType === "cfe_incompleto") {
     withTransaction(() => {
@@ -175,12 +178,14 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
       getDatabase().prepare("UPDATE gates SET status = 'bloqueado' WHERE expediente_id = ? AND gate_code >= 'G2'").run(expedienteId);
       getDatabase().prepare("UPDATE expediente_requirements SET status = 'observado', observed_reason = ?, updated_at = ? WHERE expediente_id = ? AND requirement_code LIKE 'R%' AND status NOT IN ('validado_idc', 'no_aplica_justificado')").run(input.description.trim(), now, expedienteId);
     });
+  } else if (existingSignature) {
+    getDatabase().prepare("UPDATE external_events SET event_date = ?, description = ? WHERE id = ?").run(input.eventDate ?? now, input.description.trim(), id);
   } else insertEvent();
   if (input.eventType === "ingreso_acuse") {
     getDatabase().prepare("UPDATE expediente_requirements SET workflow_status = 'ingresado_con_acuse', updated_at = ? WHERE expediente_id = ? AND requirement_code IN ('R01', 'R07')").run(now, expedienteId);
     if (input.documentId) getDatabase().prepare("UPDATE documents SET status = 'ingresado_con_acuse', updated_at = ? WHERE id = ?").run(now, input.documentId);
   }
-  auditEvent({ actorId: user.id, actorRole: user.role, eventType: "evidencia_externa_registrada", entityType: "external_event", entityId: id, expedienteId, metadata: { event_type: input.eventType, document_id: input.documentId ?? null } });
+  auditEvent({ actorId: user.id, actorRole: user.role, eventType: existingSignature ? "evidencia_externa_actualizada" : "evidencia_externa_registrada", entityType: "external_event", entityId: id, expedienteId, metadata: { event_type: input.eventType, document_id: input.documentId ?? null } });
   return { id, eventType: input.eventType, reinicioAt: input.eventType === "cfe_incompleto" ? now : undefined };
 }
 

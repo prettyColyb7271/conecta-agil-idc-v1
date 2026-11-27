@@ -14,15 +14,24 @@ type Requirement = {
   sensible: number;
   validaciones: string;
   document_id: string | null;
-  versions: Array<{ id: string; version_number: number; original_filename: string; created_at: string }>;
+  version_id: string | null;
+  versions: Array<{ id: string; version_number: number; original_filename: string; created_at: string; uploaded_by_current_user: number }>;
   observations: Array<{ visibility: string; body: string; created_at?: string }>;
 };
 type Pending = { kind: string; expedienteId: string; folio: string; requirementCode?: string; label: string };
 type Gate = { gate_code: string; status: string };
 type Expediente = { id: string; folio: string; cliente_nombre: string };
 type Template = { id: string; code: string; version: number; sha256: string; active: number };
-type Format = { document_id: string; document_type: string; status: string; version_number: number; original_filename: string };
+type Format = { document_id: string; document_type: string; status: string; version_id: string; version_number: number; original_filename: string };
+type ExternalEvent = { event_type: string; document_id: string | null; description: string };
 type Aviso = { ok: boolean; text: string };
+type Firma = { fecha: string; lugar: string; solicitante: string; otorgante: string; apoderado: string; testigo1: string; testigo2: string; evidencia: File | null };
+const firmaVacia = (): Firma => ({ fecha: "", lugar: "", solicitante: "", otorgante: "", apoderado: "", testigo1: "", testigo2: "", evidencia: null });
+const FIRMAS = [{ formato: "F-01", requisito: "R01" }, { formato: "F-02", requisito: "R07" }] as const;
+const FIRMANTES = [
+  { campo: "solicitante", label: "Solicitante" }, { campo: "otorgante", label: "Otorgante" },
+  { campo: "apoderado", label: "Apoderado" }, { campo: "testigo1", label: "Testigo 1" }, { campo: "testigo2", label: "Testigo 2" },
+] as const;
 
 function gatesCompletos(gates: Gate[] | undefined): gates is Gate[] {
   return Array.isArray(gates) && gates.length === ETAPAS.length && ETAPAS.every((etapa) => gates.some((gate) => gate.gate_code === etapa.code));
@@ -86,6 +95,8 @@ export default function LocalGestorReview() {
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [gates, setGates] = useState<Gate[]>([]);
   const [formats, setFormats] = useState<Format[]>([]);
+  const [eventos, setEventos] = useState<ExternalEvent[]>([]);
+  const [firma, setFirma] = useState<Firma>(firmaVacia);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
   const [scope, setScope] = useState<"mine" | "all">("all");
@@ -104,10 +115,11 @@ export default function LocalGestorReview() {
   const filas = useRef<Record<string, HTMLElement | null>>({});
   const seleccionActual = useRef("");
   const solicitudDetalle = useRef(0);
+  const firmaEnCurso = useRef(false);
 
   const notificar = (next: Aviso) => {
     setAviso(next);
-    window.setTimeout(() => setAviso((current) => (current === next ? null : current)), 7000);
+    if (next.ok) window.setTimeout(() => setAviso((current) => (current === next ? null : current)), 7000);
   };
 
   const cargarDetalle = useCallback(async (id: string) => {
@@ -120,14 +132,16 @@ export default function LocalGestorReview() {
         fetch(`/api/expedientes/${id}/requirements/R01`),
         fetch(`/api/expedientes/${id}/gates`),
         fetch(`/api/expedientes/${id}/formats`),
+        fetch(`/api/expedientes/${id}`),
       ]);
-      const [review, gateData, formatData] = await Promise.all(responses.map((response) => response.json())) as [
+      const [review, gateData, formatData, expedienteData] = await Promise.all(responses.map((response) => response.json())) as [
         { requirements?: Requirement[]; error?: string }, { gates?: Gate[]; error?: string }, { formats?: Format[]; error?: string },
+        { expediente?: { external_events?: ExternalEvent[] }; error?: string },
       ];
-      const bodies = [review, gateData, formatData];
+      const bodies = [review, gateData, formatData, expedienteData];
       const fallo = responses.findIndex((response) => !response.ok);
       if (fallo !== -1) throw new Error(bodies[fallo].error ?? "No fue posible consultar el expediente.");
-      if (!Array.isArray(review.requirements) || !Array.isArray(formatData.formats) || !gatesCompletos(gateData.gates)) {
+      if (!Array.isArray(review.requirements) || !Array.isArray(formatData.formats) || !Array.isArray(expedienteData.expediente?.external_events) || !gatesCompletos(gateData.gates)) {
         throw new Error("La respuesta del expediente está incompleta.");
       }
       if (solicitud !== solicitudDetalle.current || id !== seleccionActual.current) return;
@@ -135,6 +149,7 @@ export default function LocalGestorReview() {
       setRequirements(review.requirements);
       setGates(nextGates);
       setFormats(formatData.formats);
+      setEventos(expedienteData.expediente.external_events);
       setCargadoId(id);
       setGateSel((current) => current || ETAPAS[gateActual(nextGates) - 1].code);
       setEstadoCarga("listo");
@@ -205,6 +220,101 @@ export default function LocalGestorReview() {
     }
   }
 
+  async function respuesta<T>(response: Response): Promise<T> {
+    const body = await response.json() as T & { error?: string };
+    if (!response.ok) throw new Error(body.error ?? `Error HTTP ${response.status}.`);
+    return body;
+  }
+
+  async function marcarFirma(formatCode: string, versionId: string) {
+    setOcupado(formatCode);
+    try {
+      await respuesta(await fetch(`/api/expedientes/${selId}/formats`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "print", formatCode, versionId }),
+      }));
+      notificar({ ok: true, text: `${formatCode} marcado para firma.` });
+      await refrescar();
+    } catch (error) {
+      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible marcar el formato." });
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function subirEscaneo(requirementCode: string, sourceVersionId: string, file: File) {
+    setOcupado(requirementCode);
+    try {
+      const data = new FormData();
+      data.set("requirementCode", requirementCode);
+      data.set("sourceVersionId", sourceVersionId);
+      data.set("file", file);
+      await respuesta(await fetch(`/api/expedientes/${selId}/documents`, { method: "POST", body: data }));
+      notificar({ ok: true, text: `${requirementCode}: escaneo recibido. Lo verifica otro Gestor IDC.` });
+      await refrescar();
+    } catch (error) {
+      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible subir el escaneo." });
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function verificarEscaneo(requirementCode: string, versionId: string) {
+    setOcupado(requirementCode);
+    try {
+      await respuesta(await fetch(`/api/expedientes/${selId}/requirements/${requirementCode}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "verify_scan", versionId }),
+      }));
+      notificar({ ok: true, text: `${requirementCode}: escaneo verificado.` });
+      await refrescar();
+    } catch (error) {
+      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible verificar el escaneo." });
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function registrarFirma() {
+    if (firmaEnCurso.current) return;
+    if (!firma.evidencia) {
+      notificar({ ok: false, text: "Selecciona la evidencia de la firma presencial." });
+      return;
+    }
+    firmaEnCurso.current = true;
+    setOcupado("firma");
+    const firmantes = [
+      `Solicitante: ${firma.solicitante.trim()}`, `Otorgante: ${firma.otorgante.trim()}`,
+      `Apoderado: ${firma.apoderado.trim()}`, `Testigo 1: ${firma.testigo1.trim()}`, `Testigo 2: ${firma.testigo2.trim()}`,
+    ];
+    const description = "Firma presencial";
+    const lugar = firma.lugar.trim();
+    try {
+      const data = new FormData();
+      data.set("eventType", "firma_presencial");
+      data.set("eventDate", firma.fecha);
+      data.set("description", `${description} · Lugar: ${lugar} · Firmantes: ${firmantes.join(", ")}`);
+      data.set("file", firma.evidencia);
+      const uploaded = await respuesta<{ document: { documentId: string } }>(await fetch(`/api/expedientes/${selId}/documents`, { method: "POST", body: data }));
+      await respuesta(await fetch(`/api/expedientes/${selId}/gates`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "event", eventType: "firma_presencial", eventDate: firma.fecha, description, lugar, firmantes, documentId: uploaded.document.documentId }),
+      }));
+      setFirma(firmaVacia());
+      notificar({ ok: true, text: "Firma presencial registrada." });
+      await refrescar();
+    } catch (error) {
+      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible registrar la firma." });
+      await cargarDetalle(selId);
+    } finally {
+      firmaEnCurso.current = false;
+      setOcupado(null);
+    }
+  }
+
   async function subir(code: string, file: File) {
     setOcupado(code);
     try {
@@ -215,6 +325,8 @@ export default function LocalGestorReview() {
       const body = await response.json().catch(() => ({})) as { error?: string };
       notificar(response.ok ? { ok: true, text: `${code}: documento cargado. Otro Gestor IDC debe validarlo.` } : { ok: false, text: body.error ?? "No fue posible cargar el documento." });
       if (response.ok) await refrescar();
+    } catch (error) {
+      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible cargar el documento." });
     } finally {
       setOcupado(null);
     }
@@ -244,6 +356,8 @@ export default function LocalGestorReview() {
         setGateSel(ETAPAS[gateActual(next) - 1].code);
         await cargarPendientes();
       }
+    } catch (error) {
+      notificar({ ok: false, text: error instanceof Error ? error.message : "No fue posible cerrar el gate." });
     } finally {
       setOcupado(null);
     }
@@ -276,6 +390,7 @@ export default function LocalGestorReview() {
   }
 
   function seleccionarExpediente(id: string) {
+    if (ocupado !== null) return;
     seleccionActual.current = id;
     solicitudDetalle.current += 1;
     setSelId(id);
@@ -285,6 +400,8 @@ export default function LocalGestorReview() {
     setRequirements([]);
     setGates([]);
     setFormats([]);
+    setEventos([]);
+    setFirma(firmaVacia());
     setEstadoCarga("cargando");
   }
 
@@ -301,6 +418,13 @@ export default function LocalGestorReview() {
   const visibles = delGrupo.filter((item) => filtro === "todos" || estado(item.status).grupo === filtro);
   const cuenta = (id: (typeof FILTROS)[number]["id"]) => id === "todos" ? delGrupo.length : delGrupo.filter((item) => estado(item.status).grupo === id).length;
   const formato = (code: string) => formats.find((item) => item.document_type.includes(code));
+  const firmaRegistrada = eventos.some((item) => item.event_type === "firma_presencial" && item.document_id &&
+    ["Lugar:", "Solicitante:", "Otorgante:", "Apoderado:", "Testigo 1:", "Testigo 2:"].every((label) => item.description.includes(label)));
+  const faltantesG2 = [
+    ...FIRMAS.filter(({ requisito }) => requirements.find((item) => item.requirement_code === requisito)?.status !== "escaneo_verificado_idc").map(({ requisito }) => `Escaneo ${requisito} verificado`),
+    ...(!firmaRegistrada ? ["Firma presencial registrada"] : []),
+  ];
+  const firmaCompleta = Boolean(firma.fecha && firma.lugar.trim() && firma.evidencia && FIRMANTES.every(({ campo }) => firma[campo].trim()));
   const plantillas = Array.from(new Set(templates.map((template) => template.code))).sort().map((code) => ({
     code,
     activa: templates.find((template) => template.code === code && template.active),
@@ -315,6 +439,7 @@ export default function LocalGestorReview() {
             Expediente
             <select
               value={selId}
+              disabled={ocupado !== null}
               onChange={(event) => seleccionarExpediente(event.target.value)}
               className="mt-1 block w-72 max-w-full rounded border border-[#1b3d66] bg-white px-2 py-1.5 text-sm font-normal text-[#0d1f33]"
             >
@@ -393,9 +518,59 @@ export default function LocalGestorReview() {
             </div>
           )}
           {exige.evidencias && <ul className="mt-2 list-inside list-disc text-xs">{exige.evidencias.map((item) => <li key={item}>{item}</li>)}</ul>}
+          {etapaSel.code === "G2" && (
+            <div className="mt-4 space-y-3 rounded bg-white p-3">
+              <p className="text-sm font-bold">Firma presencial y escaneos</p>
+              {!g1Cerrado && <p className="text-xs">Disponible después de cerrar G1.</p>}
+              {g1Cerrado && FIRMAS.map(({ formato: formatCode, requisito }) => {
+                const doc = formato(formatCode);
+                const req = requirements.find((item) => item.requirement_code === requisito);
+                const ultima = req?.versions[0];
+                const pendiente = statusGate("G2") === "abierto";
+                return (
+                  <div key={formatCode} className="flex flex-wrap items-center justify-between gap-2 rounded bg-[#cfe0f1] p-2 text-xs">
+                    <span><b>{formatCode} · {requisito}</b> · {req ? estado(req.status).label : "Sin requisito"}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {pendiente && doc && req?.status === "pdf_generado" && (
+                        <button type="button" disabled={ocupado !== null} onClick={() => void marcarFirma(formatCode, doc.version_id)} className="rounded bg-[#0d1f33] px-3 py-1 font-semibold text-white disabled:opacity-50">Marcar para firma</button>
+                      )}
+                      {pendiente && req?.status === "pendiente_firma_presencial" && req.version_id && (
+                        <label className="cursor-pointer rounded bg-[#5885b1] px-3 py-1 font-semibold text-white focus-within:ring-2 focus-within:ring-sky-400">
+                          Subir escaneo firmado
+                          <input type="file" className="sr-only" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" aria-label={`Subir escaneo firmado ${requisito}`} disabled={ocupado !== null}
+                            onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file && req.version_id) void subirEscaneo(requisito, req.version_id, file); }} />
+                        </label>
+                      )}
+                      {pendiente && req?.status === "escaneo_recibido" && ultima && (
+                        <button type="button" disabled={ocupado !== null || ultima.uploaded_by_current_user !== 0} onClick={() => void verificarEscaneo(requisito, ultima.id)} className="rounded bg-emerald-600 px-3 py-1 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                          {ultima.uploaded_by_current_user === 1 ? "Lo verifica otro Gestor IDC" : ultima.uploaded_by_current_user === 0 ? "Verificar escaneo" : "No se pudo identificar al cargador"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {g1Cerrado && statusGate("G2") === "abierto" && !firmaRegistrada && (
+                <form className="grid gap-2 rounded bg-[#cfe0f1] p-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (firmaCompleta) void registrarFirma(); }}>
+                  <p className="text-xs font-bold sm:col-span-2">Registrar firma presencial</p>
+                  <label className="text-xs font-bold">Fecha<input required type="date" value={firma.fecha} onChange={(event) => setFirma({ ...firma, fecha: event.target.value })} className="mt-1 block w-full rounded border border-[#1b3d66] bg-white px-2 py-1 font-normal" /></label>
+                  <label className="text-xs font-bold">Lugar<input required value={firma.lugar} onChange={(event) => setFirma({ ...firma, lugar: event.target.value })} className="mt-1 block w-full rounded border border-[#1b3d66] bg-white px-2 py-1 font-normal" /></label>
+                  {FIRMANTES.map(({ campo, label }) => (
+                    <label key={campo} className="text-xs font-bold">{label}<input required value={firma[campo]} onChange={(event) => setFirma({ ...firma, [campo]: event.target.value })} className="mt-1 block w-full rounded border border-[#1b3d66] bg-white px-2 py-1 font-normal" /></label>
+                  ))}
+                  <label className="text-xs font-bold">Foto o PDF de evidencia<input required type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={(event) => setFirma({ ...firma, evidencia: event.target.files?.[0] ?? null })} className="mt-1 block w-full font-normal" /></label>
+                  <div className="sm:col-span-2"><button type="submit" disabled={!firmaCompleta || ocupado !== null} className="rounded bg-[#0d1f33] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{ocupado === "firma" ? "Registrando…" : "Registrar firma presencial"}</button></div>
+                </form>
+              )}
+              <div className="text-xs">
+                <p className="font-bold">Qué falta para cerrar G2</p>
+                {faltantesG2.length ? <ul className="list-inside list-disc">{faltantesG2.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No falta nada.</p>}
+              </div>
+            </div>
+          )}
           {statusGate(etapaSel.code) === "abierto" && (
             <button
-              disabled={ocupado === etapaSel.code}
+              disabled={ocupado !== null || (etapaSel.code === "G2" && faltantesG2.length > 0)}
               onClick={() => void cerrarGate(etapaSel.code)}
               className="mt-3 rounded bg-[#0d1f33] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#16345a] disabled:opacity-60"
             >

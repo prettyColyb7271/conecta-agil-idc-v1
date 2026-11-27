@@ -232,7 +232,7 @@ export function listRequirementReview(user: AuthUser, expedienteId: string) {
   return rows.map((row) => ({
     ...row,
     observed_reason: isIdc(user) ? row.observed_reason : null,
-    versions: row.document_id ? database.prepare("SELECT id, version_number, original_filename, size_bytes, sha256, change_reason, created_at FROM document_versions WHERE document_id = ? ORDER BY version_number DESC").all(row.document_id) : [],
+    versions: row.document_id ? database.prepare("SELECT id, version_number, original_filename, size_bytes, sha256, change_reason, created_at, (author_id = ?) AS uploaded_by_current_user FROM document_versions WHERE document_id = ? ORDER BY version_number DESC").all(user.id, row.document_id) : [],
     observations: database.prepare("SELECT id, visibility, body, created_at FROM observations WHERE requirement_id = ? AND (visibility = 'cliente' OR ? = 1) ORDER BY created_at DESC").all(row.id, isIdc(user) ? 1 : 0) as Array<{ id: string; visibility: "cliente" | "interno_idc"; body: string; created_at: string }>,
   }));
 }
