@@ -4,14 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { runSuite } from "./helpers/suite-runner.mjs";
+import { acquireRegressionLock } from "./helpers/regression-lock.mjs";
 
 const root = process.cwd();
 const port = process.env.ISOLATED_PORT ?? "3199";
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-agil-e2e-"));
-const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir, MFA_ENCRYPTION_KEY: process.env.MFA_ENCRYPTION_KEY ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", EMAIL_TRANSPORT: "file", EMAIL_FROM: "Conecta Agil <no-reply@example.invalid>" };
+let dataDir;
+let env;
 const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
 const results = [];
 let server;
+let releaseLock;
 
 async function run(name, args, suiteEnv = env) {
   const result = await runSuite(name, args, { cwd: root, env: suiteEnv });
@@ -25,6 +27,9 @@ function skip(name, reason) {
 }
 
 try {
+  releaseLock = await acquireRegressionLock(path.join(os.tmpdir(), "conecta-agil-e2e.lock"));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-agil-e2e-"));
+  env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir, MFA_ENCRYPTION_KEY: process.env.MFA_ENCRYPTION_KEY ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", EMAIL_TRANSPORT: "file", EMAIL_FROM: "Conecta Agil <no-reply@example.invalid>" };
   const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201];
   if (!Number.isInteger(ports[0]) || ports[0] < 1 || ports[0] > 65535 || ports[0] === 3140 || new Set(ports).size !== ports.length) {
     throw new Error("ISOLATED_PORT debe ser un puerto libre distinto de 3140 y de los usados por las suites.");
@@ -89,7 +94,7 @@ try {
     server.kill();
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  for (let attempt = 0; dataDir && attempt < 5; attempt += 1) {
     try {
       fs.rmSync(dataDir, { recursive: true, force: true });
       break;
@@ -108,4 +113,12 @@ try {
     console.log(`${result.name} → exit ${exit} → ${counts}${detail ? ` (${detail})` : ""}`);
   }
   if (results.some((result) => !result.success)) process.exitCode = 1;
+  if (releaseLock) {
+    try {
+      releaseLock();
+    } catch (error) {
+      console.error("No se pudo liberar el candado de regresión:", error);
+      process.exitCode = 1;
+    }
+  }
 }
