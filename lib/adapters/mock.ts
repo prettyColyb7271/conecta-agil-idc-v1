@@ -90,7 +90,7 @@ class MockDatabaseAdapter implements DatabaseAdapter {
   private seedFromMockData() {
     const users = [
       { id: "u1", nombre: "Prudencio Villa Buenaventura", role: "cliente", estado: "pendiente" },
-      { id: "u2", nombre: "Olegario Serenes Souza", role: "coordinador_idc", estado: "activo" },
+      { id: "u2", nombre: "Gestor IDC Demo", role: "coordinador_idc", estado: "activo" },
       { id: "u3", nombre: "Crecencio Chaparro Moreno", role: "gestor_tramites_cfe", estado: "bloqueado" },
     ];
     for (const user of users) this.records.users.set(user.id, user);

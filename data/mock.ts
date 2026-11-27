@@ -113,15 +113,15 @@ export const tramites = [TRAMITE_FV_MT_LABEL];
 export const proyectos: {
   folio: string; proyecto: string; cliente: string; tramite: string; estatus: Estatus; gate: number; responsable: string;
 }[] = [
-  { folio: "IDC-2026-021", proyecto: "Central FV 45.5 kWp planta Hermosillo", cliente: "Industrias Ejemplo S.A. de C.V.", tramite: "Interconexión FV MT", estatus: "riesgo", gate: 3, responsable: "Olegario Serenes" },
-  { folio: "IDC-2026-017", proyecto: "Central FV parque industrial", cliente: "Parque Norte S.A.", tramite: "Interconexión FV MT", estatus: "atrasado", gate: 5, responsable: "Olegario Serenes" },
-  { folio: "IDC-2026-014", proyecto: "Central FV bodega 2", cliente: "Logística Sonora S.A.", tramite: "Interconexión FV MT", estatus: "entiempo", gate: 6, responsable: "Olegario Serenes" },
-  { folio: "IDC-2026-009", proyecto: "Paneles solares oficinas", cliente: "Despacho Ejemplo", tramite: "Interconexión FV MT", estatus: "entiempo", gate: 8, responsable: "Olegario Serenes" },
+  { folio: "IDC-2026-021", proyecto: "Central FV 45.5 kWp planta Hermosillo", cliente: "Industrias Ejemplo S.A. de C.V.", tramite: "Interconexión FV MT", estatus: "riesgo", gate: 3, responsable: "Gestor IDC Demo" },
+  { folio: "IDC-2026-017", proyecto: "Central FV parque industrial", cliente: "Parque Norte S.A.", tramite: "Interconexión FV MT", estatus: "atrasado", gate: 5, responsable: "Gestor IDC Demo" },
+  { folio: "IDC-2026-014", proyecto: "Central FV bodega 2", cliente: "Logística Sonora S.A.", tramite: "Interconexión FV MT", estatus: "entiempo", gate: 6, responsable: "Gestor IDC Demo" },
+  { folio: "IDC-2026-009", proyecto: "Paneles solares oficinas", cliente: "Despacho Ejemplo", tramite: "Interconexión FV MT", estatus: "entiempo", gate: 8, responsable: "Gestor IDC Demo" },
 ];
 
 export type EstadoUsuario = "pendiente" | "activo" | "bloqueado";
 export const usuariosIniciales: { id: string; nombre: string; rol: Role; estado: EstadoUsuario }[] = [
   { id: "u1", nombre: "Prudencio Villa Buenaventura", rol: "cliente", estado: "pendiente" },
-  { id: "u2", nombre: "Olegario Serenes Souza", rol: "coordinador_idc", estado: "activo" },
+  { id: "u2", nombre: "Gestor IDC Demo", rol: "coordinador_idc", estado: "activo" },
   { id: "u3", nombre: "Crecencio Chaparro Moreno", rol: "gestor_tramites_cfe", estado: "bloqueado" },
 ];
