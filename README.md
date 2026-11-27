@@ -62,7 +62,8 @@ soporta MFA opcional para otros usuarios.
 ### Seguridad, correo y auditoría
 
 - MFA TOTP, códigos de respaldo, cifrado de secretos MFA y prevención de
-  reutilización de códigos.
+  reutilización de códigos. La vinculación muestra un QR generado localmente
+  y una clave manual compatibles con OneAuth y otros autenticadores TOTP.
 - Recuperación de acceso con enlaces de un solo uso, expiración, revocación de
   sesiones y bitácora.
 - Transporte de correo `file` para pruebas y `resend` para el entorno

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 
 type MfaState = { enabled: boolean; setup?: { secret: string; otpauthUri: string }; backupCodes?: string[] };
 
@@ -42,10 +43,14 @@ export default function MfaSetup() {
     {state.enabled ? <p className="font-semibold text-green-700">MFA activo.</p> : <>
       {!state.setup && <button className="rounded bg-blue-700 px-4 py-2 text-white" onClick={start}>Iniciar vinculación</button>}
       {state.setup && <section className="space-y-2 rounded border p-4">
-        <p>Agrega una cuenta manualmente en tu aplicación Authenticator, selecciona código basado en tiempo e introduce este secreto:</p>
+        <p>Escanea este código con OneAuth u otra aplicación Authenticator:</p>
+        <QRCodeSVG value={state.setup.otpauthUri} size={224} marginSize={4} title="Código QR de vinculación MFA" />
+        <p>Si no puedes escanearlo, agrega la cuenta manualmente, selecciona código basado en tiempo e introduce este secreto:</p>
         <code className="block font-bold">{state.setup.secret}</code>
-        <p>URI para aplicaciones compatibles:</p>
-        <code className="block break-all text-sm">{state.setup.otpauthUri}</code>
+        <details>
+          <summary>Mostrar URI para aplicaciones compatibles</summary>
+          <code className="block break-all text-sm">{state.setup.otpauthUri}</code>
+        </details>
         <input className="rounded border p-2" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Código de 6 dígitos" />
         <button className="rounded bg-blue-700 px-4 py-2 text-white" onClick={confirm}>Confirmar MFA</button>
       </section>}
