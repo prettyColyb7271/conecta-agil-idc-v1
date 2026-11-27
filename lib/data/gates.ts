@@ -5,6 +5,8 @@ import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { getExpediente } from "@/lib/data/expedientes";
 import { REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA } from "@/lib/etapas";
+import { sumarMesesCalendario } from "@/lib/fechas";
+import { diasHastaFecha, nivelAlertaOficio } from "@/lib/vigencia-oficio";
 
 export class GateValidationError extends Error {
   constructor(message: string) {
@@ -40,10 +42,11 @@ function gateRows(id: string) {
   `).all(id).map((row) => {
     const item = row as { gate_code: string; status: string };
     if (item.gate_code !== "G4") return row;
+    const gate6 = getDatabase().prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = 'G5'").get(id) as { status: string } | undefined;
     const event = getDatabase().prepare("SELECT vence_at, resultado FROM external_events WHERE expediente_id = ? AND event_type = 'resolucion_cfe' ORDER BY event_date DESC, created_at DESC, rowid DESC LIMIT 1").get(id) as { vence_at: string | null; resultado: string | null } | undefined;
-    if (!event?.vence_at || event.resultado === "no_favorable") return { ...row as object, alert: null };
-    const days = Math.ceil((Date.parse(event.vence_at) - Date.now()) / 86400000);
-    return { ...row as object, alert: { level: days < 0 ? "roja" : days <= 10 ? "ambar" : null, days, vence_at: event.vence_at } };
+    if (gate6?.status === "cerrado" || !event?.vence_at || !["favorable", "condicionado"].includes(event.resultado ?? "")) return { ...row as object, alert: null };
+    const days = diasHastaFecha(event.vence_at);
+    return { ...row as object, alert: { level: nivelAlertaOficio(days), days, vence_at: event.vence_at } };
   });
 }
 
@@ -190,9 +193,10 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
   }
   if (input.eventType === "ingreso_acuse" && (!input.medio || !["ventanilla", "portal"].includes(input.medio) || !input.solicitudNumero)) throw new GateValidationError("El acuse requiere medio y número de solicitud CFE.");
   if (input.eventType === "resolucion_cfe" && (!input.venceAt && !input.vigenciaMeses || !input.resultado)) throw new GateValidationError("El oficio resolutivo requiere vigencia y resultado.");
+  if (input.eventType === "resolucion_cfe" && input.vigenciaMeses !== undefined && (!Number.isSafeInteger(input.vigenciaMeses) || input.vigenciaMeses < 1)) throw new GateValidationError("La vigencia debe indicarse en meses enteros.");
   const now = new Date().toISOString();
   const expiresAt = input.venceAt ?? (input.vigenciaMeses && input.eventType === "resolucion_cfe"
-    ? new Date(new Date(input.eventDate ?? now).getTime() + input.vigenciaMeses * 30 * 86400000).toISOString()
+    ? sumarMesesCalendario(input.eventDate ?? now, input.vigenciaMeses).toISOString()
     : undefined);
   if (input.subgateDocumentId) {
     const subgate = getDatabase().prepare("SELECT expediente_id FROM documents WHERE id = ?").get(input.subgateDocumentId) as { expediente_id: string } | undefined;

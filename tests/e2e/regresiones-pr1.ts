@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { documentosDelCliente, type RequisitoCliente } from "../../lib/portal-cliente";
 import { encabezadoGate, semaforoExpediente } from "../../lib/semaforo";
 import { ETAPAS } from "../../lib/etapas";
+import { sumarMesesCalendario } from "../../lib/fechas";
+import { etiquetaGate, traducirGateMensaje } from "../../lib/gate-display";
+import { alertaVigenciaOficio, diasHastaFecha, nivelAlertaOficio } from "../../lib/vigencia-oficio";
 
 const gates = [{ gate_code: "G1", status: "cerrado" }, { gate_code: "G3", status: "cerrado" }, { gate_code: "G6", status: "abierto" }];
 const requisito = (status: string): RequisitoCliente => ({
@@ -39,4 +42,23 @@ assert.equal(encabezadoGate(avance(4, "bloqueado"), "listo"), "Gate 5 · Oficio 
 assert.equal(encabezadoGate(avance(7), "listo"), "Gate 8 · Medidor y alta");
 assert.equal(encabezadoGate(avance(8), "listo"), "Expediente cerrado");
 
-console.log("Regresiones PR #1: portal reutilizados y semáforo OK");
+assert.equal(sumarMesesCalendario("2026-01-31T12:30:00.000Z", 1).toISOString(), "2026-02-28T12:30:00.000Z");
+assert.equal(sumarMesesCalendario("2024-01-31T00:00:00.000Z", 1).toISOString(), "2024-02-29T00:00:00.000Z");
+assert.equal(sumarMesesCalendario("2024-02-29T00:00:00.000Z", 12).toISOString(), "2025-02-28T00:00:00.000Z");
+
+assert.equal(etiquetaGate("G3"), "Gate 4 · UVIE e ingreso a CFE");
+assert.equal(traducirGateMensaje("G3 requiere un acuse antes de G4."), "Gate 4 · UVIE e ingreso a CFE requiere un acuse antes de Gate 5 · Oficio resolutivo.");
+
+const hoy = new Date("2026-11-27T12:00:00.000Z");
+assert.equal(diasHastaFecha("2026-12-02T00:00:00.000Z", hoy), 5);
+assert.equal(nivelAlertaOficio(11), "informativa");
+assert.equal(nivelAlertaOficio(10), "roja");
+assert.equal(nivelAlertaOficio(-1), "roja");
+const eventoOficio = [{ event_type: "resolucion_cfe", resultado: "favorable", vence_at: "2026-12-02T00:00:00.000Z" }];
+assert.deepEqual(alertaVigenciaOficio([{ gate_code: "G5", status: "abierto" }], eventoOficio, hoy), {
+  venceAt: "2026-12-02T00:00:00.000Z", diasRestantes: 5, nivel: "roja",
+});
+assert.equal(alertaVigenciaOficio([{ gate_code: "G5", status: "cerrado" }], eventoOficio, hoy), null);
+assert.equal(alertaVigenciaOficio([{ gate_code: "G5", status: "abierto" }], [{ ...eventoOficio[0], resultado: "no_favorable" }], hoy), null);
+
+console.log("Regresiones PR #1: portal, semáforo, meses calendario y alertas OK");

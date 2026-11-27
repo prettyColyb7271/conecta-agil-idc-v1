@@ -8,6 +8,7 @@ import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { getExpediente, type ScopeUser } from "@/lib/data/expedientes";
 import { assertRequisitosIngreso, marcarIngresoConAcuse } from "@/lib/data/gates";
 import { esPostInstalacion } from "@/lib/etapas";
+import { sumarMesesCalendario } from "@/lib/fechas";
 
 export class DocumentValidationError extends Error {
   constructor(message: string) {
@@ -153,6 +154,7 @@ export async function uploadExternalEvidence(user: AuthUser, expedienteId: strin
   if (!event.description?.trim()) throw new DocumentValidationError("La descripción es obligatoria.");
   if (eventType === "ingreso_acuse" && (!event.medio || !["ventanilla", "portal"].includes(event.medio) || !event.solicitudNumero)) throw new DocumentValidationError("El acuse requiere medio y número de solicitud CFE.");
   if (eventType === "resolucion_cfe" && ((!event.venceAt && !event.vigenciaMeses) || !event.resultado)) throw new DocumentValidationError("El oficio resolutivo requiere vigencia y resultado.");
+  if (eventType === "resolucion_cfe" && event.vigenciaMeses !== undefined && (!Number.isSafeInteger(event.vigenciaMeses) || event.vigenciaMeses < 1)) throw new DocumentValidationError("La vigencia debe indicarse en meses enteros.");
   if (event.subgateFile && (eventType !== "resolucion_cfe" || !event.subgateRequerido)) throw new DocumentValidationError("La evidencia del subgate solo corresponde a un oficio que lo requiere.");
   const definition = allowedTypes.get(file.type);
   if (!definition) throw new DocumentValidationError("Solo se permiten archivos PDF, JPG o PNG.");
@@ -171,7 +173,7 @@ export async function uploadExternalEvidence(user: AuthUser, expedienteId: strin
   const adapters = await getAdapters();
   const now = new Date().toISOString();
   const eventDate = event.eventDate ?? now;
-  const expiresAt = event.venceAt ?? (event.vigenciaMeses && eventType === "resolucion_cfe" ? new Date(new Date(eventDate).getTime() + event.vigenciaMeses * 30 * 86400000).toISOString() : null);
+  const expiresAt = event.venceAt ?? (event.vigenciaMeses && eventType === "resolucion_cfe" ? sumarMesesCalendario(eventDate, event.vigenciaMeses).toISOString() : null);
   let eventId = "";
   const storedKeys: string[] = [];
   try {

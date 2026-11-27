@@ -130,7 +130,7 @@ try {
   ok("subgate inválido rechazado", badSubgate.status === 400, badSubgate.json.error);
   must("registrar oficio condicionado con subgate", await evidence(E, "resolucion_cfe", { resultado: "condicionado", vigenciaMeses: "2", subgateRequerido: "true" }, pdf("subgate ficticio")), 201);
   const resolution = (await gestor.get(E)).json.expediente.external_events.find((item) => item.event_type === "resolucion_cfe");
-  ok("oficio conserva resultado, fecha límite y documento de subgate", resolution?.resultado === "condicionado" && resolution.vence_at?.startsWith("2027-01-26") && !!resolution.subgate_document_id);
+  ok("oficio conserva resultado, fecha límite y documento de subgate", resolution?.resultado === "condicionado" && resolution.vence_at?.startsWith("2027-01-27") && !!resolution.subgate_document_id);
   must("cerrar G4", await close(gestor, E, "G4"), 200);
   must("registrar contrato", await evidence(E, "contrato"), 201);
   must("cerrar G5", await close(gestor, E, "G5"), 200);
