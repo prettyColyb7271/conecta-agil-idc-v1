@@ -27,18 +27,17 @@ export const ESTADO_DOCUMENTO: Record<string, string> = {
   invalidado_por_cambio: "Volver a subir",
 };
 
-// Documentos que el propio cliente sube. Los de la UIIE que ya se entregaron
-// para CFE (reutiliza_code) no se vuelven a pedir.
 export function documentosDelCliente(review: RequisitoCliente[], gates: Gate[]) {
   const status = (code: string) => gates.find((gate) => gate.gate_code === code)?.status;
   const cfeAbierto = status("G1") !== "cerrado";
   const uiieAbierto = status("G6") === "abierto";
   const delCliente = (item: RequisitoCliente) => item.integra.includes("Cliente") && CARGABLES.includes(item.tipo);
   const cfe = review.filter((item) => item.requirement_code.startsWith("R") && delCliente(item));
-  const uiie = review.filter((item) => item.requirement_code.startsWith("U") && delCliente(item) && !item.reutiliza_code);
+  const reutilizado = (item: RequisitoCliente) => Boolean(item.reutiliza_code) && ["validado_idc", "no_aplica_justificado"].includes(item.status);
+  const uiie = review.filter((item) => item.requirement_code.startsWith("U") && delCliente(item) && !reutilizado(item));
   return {
     documentos: [...cfe, ...(uiieAbierto ? uiie : [])],
     puedeSubir: (item: RequisitoCliente) => !LISTOS.includes(item.status) && (item.requirement_code.startsWith("R") ? cfeAbierto : uiieAbierto),
-    reutilizados: review.filter((item) => item.requirement_code.startsWith("U") && item.reutiliza_code).length,
+    reutilizados: review.filter((item) => item.requirement_code.startsWith("U") && reutilizado(item)).length,
   };
 }

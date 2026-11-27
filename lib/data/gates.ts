@@ -52,6 +52,12 @@ function requireGateEvidence(id: string, type: ExternalEventType): void {
   if (!event) throw new GateConflictError(`Falta la evidencia externa requerida: ${type}.`);
 }
 
+export function assertRequisitosIngreso(id: string): void {
+  const rows = getDatabase().prepare("SELECT requirement_code, status FROM expediente_requirements WHERE expediente_id = ? AND requirement_code IN ('R10', 'R11')").all(id) as Array<{ requirement_code: string; status: string }>;
+  const missing = REQUISITOS_POST_INSTALACION.filter((code) => !rows.some((row) => row.requirement_code === code && row.status === "validado_idc"));
+  if (missing.length) throw new GateConflictError(`Antes de registrar el ingreso a CFE deben validarse: ${missing.join(", ")}.`);
+}
+
 function validateClose(id: string, gate: GateCode): void {
   const database = getDatabase();
   const requirements = (codes: string[]) => {
@@ -145,6 +151,7 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
   if (["firma_presencial", "ingreso_acuse", "resolucion_cfe", "contrato", "uiie", "certificado_uiie", "medidor", "interconexion", "alta_comercial"].includes(input.eventType) && !input.documentId) {
     throw new GateValidationError("Esta evidencia requiere un documento escaneado.");
   }
+  if (input.eventType === "ingreso_acuse") assertRequisitosIngreso(expedienteId);
   if (input.documentId) {
     const document = getDatabase().prepare("SELECT id, expediente_id, source, document_type FROM documents WHERE id = ?").get(input.documentId) as { id: string; expediente_id: string; source: string; document_type: string } | undefined;
     if (!document || document.expediente_id !== expedienteId || document.source !== "externo" || document.document_type !== `evidencia:${input.eventType}`) throw new GateValidationError("El documento de evidencia debe ser externo y corresponder a este evento.");

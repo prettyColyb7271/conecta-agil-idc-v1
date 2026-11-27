@@ -67,6 +67,8 @@ try {
   for (const r of cat) { const v = await g2.post(`${E}/requirements/${r.requirement_code}`, { action: "validate" }); if (v.status !== 200) console.log("    validar", r.requirement_code, v.status, v.text); }
   const c1 = await g1.post(`${E}/gates`, { action: "close", gateCode: "G1" });
   ok("G1 con R01-R09 y sin dictamen UVIE → 200 y G2 abierto", c1.status === 200 && (await gate("G2")) === "abierto", c1.text);
+  const estadoF01 = async () => (await cli.get("/portal/formatos")).buf.toString().match(/Solicitud de interconexión \(formato CFE\)[\s\S]*?<\/div>/)?.[0] ?? "";
+  ok("R01 validado sin firma no aparece como firmado", !(await estadoF01()).includes("Firmado") && (await estadoF01()).includes("Pendiente"));
 
   console.log("== formatos");
   const gen = {};
@@ -107,23 +109,26 @@ try {
   ok("PA-04: G2 sin escaneos verificados → 409", c2early.status === 409, c2early.text);
   const scans = {};
   for (const [f, code] of [["F-01", "R01"], ["F-02", "R07"]]) { const s = await up(g1, exp.id, code, pdf(`escaneo ${f}`), { sourceVersionId: gen[f]?.versionId }); scans[f] = s.json?.document; ok(`subir escaneo firmado ${f} (G1 cerrado) → 201`, s.status === 201, `${s.status} ${s.text}`); }
+  ok("escaneo recibido aparece como firma en revisión", (await estadoF01()).includes("Firma en revisión"));
   const evEvidence = await upEvidence(g1, exp.id, "firma_presencial", pdf("firma presencial"), { description: "Firma en oficina IDC" });
   const ev = await g1.post(`${E}/gates`, { action: "event", eventType: "firma_presencial", description: "Firma en oficina IDC", lugar: "Hermosillo", firmantes: ["solicitante", "otorgante", "apoderado", "testigo 1", "testigo 2"], documentId: evEvidence.json?.document?.documentId });
   ok("registrar firma presencial → 201", ev.status === 201, ev.text);
   ok("verificar escaneo por quien lo subió → 409", (await g1.post(`${E}/requirements/R01`, { action: "verify_scan", versionId: scans["F-01"]?.versionId })).status === 409);
   for (const [f, code] of [["F-01", "R01"], ["F-02", "R07"]]) { const v = await g2.post(`${E}/requirements/${code}`, { action: "verify_scan", versionId: scans[f]?.versionId }); ok(`verificar escaneo ${f} (otro gestor) → 200`, v.status === 200, v.text); }
+  ok("escaneo verificado aparece como firmado", (await estadoF01()).includes("Firmado"));
   const c2 = await g1.post(`${E}/gates`, { action: "close", gateCode: "G2" });
   ok("G2 cierra → 200 y G3 abierto", c2.status === 200 && (await gate("G3")) === "abierto", c2.text);
 
   console.log("== PASO 7: G3 → G7");
   ok("precondición: G2 cerrado", (await gate("G2")) === "cerrado", await gate("G2"));
-  const upAcuse = await upEvidence(g1, exp.id, "ingreso_acuse", pdf("acuse sellado"), { description: "Acuse sellado", medio: "ventanilla", solicitudNumero: "SOL-2026-001" });
-  ok("subir evidencia externa del ACUSE tras G1 → 201", upAcuse.status === 201, `${upAcuse.status} ${upAcuse.text}`);
-  const r06doc = (await req("R06"))?.document_id;
-  const fake = await g1.post(`${E}/gates`, { action: "event", eventType: "ingreso_acuse", description: "acuse", medio: "ventanilla", solicitudNumero: "SOL-1", documentId: r06doc });
-  ok("usar la INE (R06) como 'acuse' → rechazado", fake.status >= 400, `${fake.status} ${fake.text}`);
   const evt = (body) => g1.post(`${E}/gates`, { action: "event", ...body });
   const close = (g, s = g1) => s.post(`${E}/gates`, { action: "close", gateCode: g });
+  const acuse = { description: "Acuse sellado", medio: "ventanilla", solicitudNumero: "SOL-2026-001" };
+  const earlyUpload = await upEvidence(g1, exp.id, "ingreso_acuse", pdf("acuse anticipado"), acuse);
+  ok("subir acuse sin R10 y R11 validados → 409", earlyUpload.status === 409 && /R10/.test(earlyUpload.json?.error ?? "") && /R11/.test(earlyUpload.json?.error ?? ""), earlyUpload.text);
+  const earlyEvent = await evt({ eventType: "ingreso_acuse", ...acuse, documentId: evEvidence.json?.document?.documentId });
+  ok("registrar acuse sin R10 y R11 validados → 409", earlyEvent.status === 409 && /R10/.test(earlyEvent.json?.error ?? "") && /R11/.test(earlyEvent.json?.error ?? ""), earlyEvent.text);
+  ok("acuse rechazado no registra evento", !(await g1.get(E)).json.expediente.external_events.some((event) => event.event_type === "ingreso_acuse"));
   const c3early = await close("G3");
   ok("G3 sin fotos ni dictamen UVIE → 409", c3early.status === 409 && /R10/.test(c3early.json?.error ?? "") && /R11/.test(c3early.json?.error ?? ""), c3early.text);
   for (const code of postInstalacion) {
@@ -131,7 +136,18 @@ try {
     ok(`cargar ${code} con G1 cerrado → 201`, u.status === 201, `${u.status} ${u.text}`);
     const v = await g2.post(`${E}/requirements/${code}`, { action: "validate" });
     ok(`validar ${code} con G1 cerrado → 200`, v.status === 200, `${v.status} ${v.text}`);
+    if (code === "R10") {
+      const partial = await upEvidence(g1, exp.id, "ingreso_acuse", pdf("acuse prematuro"), acuse);
+      ok("acuse con R11 pendiente → 409", partial.status === 409 && /R11/.test(partial.json?.error ?? ""), partial.text);
+    }
   }
+  const upAcuse = await upEvidence(g1, exp.id, "ingreso_acuse", pdf("acuse sellado"), acuse);
+  ok("subir acuse con R10 y R11 validados → 201", upAcuse.status === 201, `${upAcuse.status} ${upAcuse.text}`);
+  const registered = await evt({ eventType: "ingreso_acuse", ...acuse, documentId: upAcuse.json?.document?.documentId });
+  ok("registrar acuse con R10 y R11 validados → 201", registered.status === 201, registered.text);
+  const r06doc = (await req("R06"))?.document_id;
+  const fake = await evt({ eventType: "ingreso_acuse", ...acuse, documentId: r06doc });
+  ok("usar la INE (R06) como 'acuse' → rechazado", fake.status >= 400, `${fake.status} ${fake.text}`);
   ok("R09 sigue bloqueado con G1 cerrado → 409", (await up(cli, exp.id, "R09", pdf("R09 tarde"))).status === 409);
   const steps = [
     ["G3", null],
@@ -146,6 +162,8 @@ try {
   const u = (await g1.get(`${E}/requirements/U01`)).json?.requirements ?? [];
   const uReqs = u.filter((r) => r.requirement_code?.startsWith("U"));
   ok("U01–U17 visibles en la revisión (17)", uReqs.length === 17, `vistos=${uReqs.length} (la lista de revisión solo trae R%?)`);
+  const portal = (await cli.get("/portal/formatos")).buf.toString();
+  ok("U06 requerido es visible y cargable para el cliente", portal.includes('aria-label="Subir Identificación del representante legal"'));
   const upU = await up(cli, exp.id, "U07", pdf("INE de quien atiende"));
   ok("cliente sube U07 (requisito UIIE) → 201", upU.status === 201, `${upU.status} ${upU.text}`);
   const valU = await g2.post(`${E}/requirements/U07`, { action: "validate" });
@@ -170,6 +188,6 @@ try {
   ok("cliente ve su línea de tiempo (eventos externos)", tl.length >= 5, tl.length);
 } finally {
   server?.kill(); await new Promise((r) => setTimeout(r, 800)); try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch {}
-  console.log(`\nRESULTADO: ${pass} ✅ / ${fail} ❌`); if (fails.length) console.log(" - " + fails.join("\n - "));
+  console.log(`\nRESULTADO: ${pass} ✅ / ${fail} ❌`); if (fails.length) { console.log(" - " + fails.join("\n - ")); process.exitCode = 1; }
 }
 

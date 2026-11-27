@@ -14,6 +14,7 @@ function runScript(script) {
 }
 
 try {
+  runScript("tests/e2e/regresiones-pr1.ts");
   runScript("tests/e2e/migration-004-with-data.mjs");
   runScript("scripts/db-migrate.ts");
   runScript("scripts/db-seed.ts");

@@ -22,7 +22,7 @@ const FORMATOS = [
   { code: "F-02", requisito: "R07", nombre: "Carta poder para el trámite ante CFE" },
   { code: "F-03", requisito: "U15", nombre: "Carta poder simple para la UIIE" },
 ];
-const FIRMADO = ["escaneo_recibido", "escaneo_verificado_idc", "ingresado_con_acuse", "validado_idc"];
+const FIRMADO = ["escaneo_verificado_idc", "ingresado_con_acuse"];
 
 // Formatos CFE del cliente en modo local: mismo diseño que la demo, con carga real de documentos.
 export default function LocalDocumentos({ expediente, review, formats }: Props) {
@@ -125,7 +125,9 @@ export default function LocalDocumentos({ expediente, review, formats }: Props) 
           </div>
           {FORMATOS.map((f) => {
             const generado = ultimoFormato(f.code);
-            const firmado = FIRMADO.includes(estadoRequisito(f.requisito) ?? "");
+            const estado = estadoRequisito(f.requisito);
+            const firmado = FIRMADO.includes(estado ?? "");
+            const enRevision = estado === "escaneo_recibido";
             return (
               <div key={f.code} className="grid grid-cols-[2fr_1fr_auto] items-center gap-3">
                 <span>
@@ -133,8 +135,8 @@ export default function LocalDocumentos({ expediente, review, formats }: Props) 
                   <span className="block text-xs text-slate-600">{generado ? generado.original_filename : `${f.code} · lo prepara IDC con tus datos`}</span>
                 </span>
                 <span className="flex items-center gap-2 font-bold">
-                  <Dot tipo={firmado ? "entiempo" : generado ? "riesgo" : "atrasado"} />
-                  {firmado ? "Firmado" : generado ? "Listo para firmar" : "No"}
+                  <Dot tipo={firmado ? "entiempo" : generado || enRevision ? "riesgo" : "atrasado"} />
+                  {firmado ? "Firmado" : enRevision ? "Firma en revisión" : generado ? "Listo para firmar" : "No"}
                 </span>
                 <span className="w-24 text-center">
                   {generado

@@ -6,6 +6,7 @@ import { getAdapters } from "@/lib/adapters";
 import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { getExpediente, type ScopeUser } from "@/lib/data/expedientes";
+import { assertRequisitosIngreso } from "@/lib/data/gates";
 import { esPostInstalacion } from "@/lib/etapas";
 
 export class DocumentValidationError extends Error {
@@ -169,6 +170,7 @@ export async function uploadExternalEvidence(user: AuthUser, expedienteId: strin
   let eventId = "";
   try {
     withTransaction(() => {
+      if (eventType === "ingreso_acuse") assertRequisitosIngreso(expedienteId);
       database.prepare("INSERT INTO documents (id, expediente_id, requirement_id, document_type, source, sensitivity, status, created_by, created_at, updated_at) VALUES (?, ?, NULL, ?, 'externo', 'normal', 'cargado', ?, ?, ?)").run(documentId, expedienteId, `evidencia:${eventType}`, user.id, now, now);
       database.prepare("INSERT INTO document_versions (id, document_id, version_number, storage_key, original_filename, mime_type, size_bytes, sha256, author_id, origin, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, 'carga', ?)").run(versionId, documentId, stored.storageKey, stored.filename, stored.mimeType, stored.sizeBytes, stored.sha256, user.id, now);
       eventId = crypto.randomUUID();

@@ -1,5 +1,5 @@
 import type { Estatus } from "@/data/mock";
-import { ETAPAS, REQUISITOS_PRE_FIRMA } from "@/lib/etapas";
+import { ETAPAS, REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA } from "@/lib/etapas";
 
 type Gate = { gate_code: string; status: string };
 type Requisito = { requirement_code: string; status: string };
@@ -10,16 +10,19 @@ export function gateActual(gates: Gate[]): number {
   return index === -1 ? ETAPAS.length : index + 1;
 }
 
-// Semáforo del expediente con datos reales:
-// - Atrasado: hay documentos observados que esperan corrección.
-// - Con riesgo: faltan requisitos de CFE previos a la cita de firma (R01–R09).
-// - En tiempo: no hay faltantes ni observaciones.
 export function semaforoExpediente(gates: Gate[], requisitos: Requisito[]): { estatus: Estatus; detalle: string } {
   const observados = requisitos.filter((item) => item.status === "observado").length;
   if (observados) return { estatus: "atrasado", detalle: `${observados} con observación` };
-  const g1Cerrado = gates.find((gate) => gate.gate_code === "G1")?.status === "cerrado";
-  const preFirma: readonly string[] = REQUISITOS_PRE_FIRMA;
-  const faltantes = g1Cerrado ? 0 : requisitos.filter((item) => preFirma.includes(item.requirement_code) && item.status === "requerido").length;
+  const estadoGate = (code: string) => gates.find((gate) => gate.gate_code === code)?.status;
+  const codes: readonly string[] = estadoGate("G1") !== "cerrado"
+    ? REQUISITOS_PRE_FIRMA
+    : estadoGate("G3") !== "cerrado"
+      ? REQUISITOS_POST_INSTALACION
+      : estadoGate("G6") === "abierto"
+        ? Array.from({ length: 17 }, (_, index) => `U${String(index + 1).padStart(2, "0")}`)
+        : [];
+  const faltantes = requisitos.filter((item) => codes.includes(item.requirement_code) && item.status === "requerido").length;
   if (faltantes) return { estatus: "riesgo", detalle: `${faltantes} requisito${faltantes > 1 ? "s" : ""} por completar` };
+  if (requisitos.some((item) => item.status === "requerido")) return { estatus: "entiempo", detalle: "Hay requisitos de otras etapas" };
   return { estatus: "entiempo", detalle: "Sin faltantes" };
 }

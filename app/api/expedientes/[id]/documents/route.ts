@@ -1,5 +1,6 @@
 import { assertSameOrigin, getCurrentUser, passwordChangeRequired } from "@/lib/auth";
 import { DocumentConflictError, DocumentTooLargeError, DocumentValidationError, uploadDocument, uploadExternalEvidence } from "@/lib/data/documents";
+import { GateConflictError } from "@/lib/data/gates";
 
 type Params = { params: Promise<{ id: string }> };
 const MAX_MULTIPART_BYTES = 21 * 1024 * 1024;
@@ -40,7 +41,7 @@ export async function POST(request: Request, { params }: Params) {
     if (error instanceof Response) return error;
     if (error instanceof DocumentTooLargeError) return Response.json({ error: error.message }, { status: 413 });
     if (error instanceof DocumentValidationError) return Response.json({ error: error.message }, { status: 400 });
-    if (error instanceof DocumentConflictError) return Response.json({ error: error.message }, { status: 409 });
+    if (error instanceof DocumentConflictError || error instanceof GateConflictError) return Response.json({ error: error.message }, { status: 409 });
     if (error instanceof Error && error.message === "LOCKED") return Response.json({ error: "La carga está bloqueada porque G1 está cerrado." }, { status: 409 });
     if (error instanceof Error && error.message === "FORBIDDEN") return Response.json({ error: "No autorizado." }, { status: 403 });
     if (error instanceof Error && error.message === "NOT_FOUND") return Response.json({ error: "Expediente o requisito no encontrado." }, { status: 404 });
