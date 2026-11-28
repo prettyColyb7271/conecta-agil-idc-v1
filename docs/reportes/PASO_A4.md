@@ -17,6 +17,8 @@ Rama `paso-a4`, creada desde `desarrollo` en `3554d68`. Estado al 27/11/2026: im
 |---|---|
 | `563a368` | Outbox transaccional, transporte Zoho y migración |
 | `4f3958b47035852f776feec60be88f7384209f88` | Pantalla admin, maqueta y regresión A4 |
+| `b6b267d` | A4b: usar `id_string` de Zoho y probar el transporte API únicamente con el simulador local |
+| `52c739e` | A4c: caché OAuth, cola por expediente, consolidación, actualizaciones selectivas y recuperación de envíos atorados |
 
 ## Verificación aislada
 
@@ -59,6 +61,22 @@ Desglose de las 15 suites que imprimieron conteo:
 
 La instalación notificó siete vulnerabilidades moderadas en el árbol de dependencias. No se modificaron dependencias ni se ejecutó `npm audit fix`.
 
+## A4b · ID exacto y simulador local
+
+Zoho Projects puede devolver el ID como número JSON de 19 dígitos, que JavaScript redondea. `responseTaskId()` ahora prioriza `id_string` y solo admite `id` si es una cadena de dígitos o un entero seguro. Se agregaron overrides de URL vacíos en `.env.example` para que las pruebas del transporte API apunten al simulador HTTP local; el transporte predeterminado sigue siendo `file`. Ver [adapter.ts](../../lib/zoho/adapter.ts), [.env.example](../../.env.example) y [supervisor-zoho-api.mjs](../../tests/e2e/supervisor-zoho-api.mjs).
+
+La regla 2 se ejecutó en una copia aislada tras `npm ci`: lint, TypeScript, revisión de plantillas y build local pasaron. `npm run test:e2e:isolated` terminó con 16 suites que reportaron conteo: **764 ✅ / 0 ❌**; cuatro procesos adicionales terminaron sin publicar conteo. `supervisor-zoho-api.mjs`: **19 ✅ / 0 ❌**. Probó IDs exactos, actualizaciones sin duplicar, respuesta numérica insegura y recuperación mediante Reintentar. Todo el tráfico API de prueba se dirigió a `127.0.0.1`; no se llamó a Zoho real.
+
+Commit: `b6b267d` (`A4b: usar id_string de Zoho y simulador del transporte api`).
+
+## A4c · caché, cola y actualizaciones selectivas
+
+El transporte API reutiliza en memoria el access token hasta su vencimiento (restando 60 segundos; 50 minutos si OAuth no devuelve `expires_in`) y renueva una sola vez cuando Projects responde 401. Una cola serializa los envíos por expediente y procesa los snapshots en orden; en modo API consolida pendientes al snapshot más nuevo, conserva los IDs conocidos y solo crea o actualiza Gates que cambiaron. HTTP 429 deja el error «Zoho limitó las peticiones; usa Reintentar en unos minutos.». Reintentar admite fallidos, pendientes con más de un minuto y envíos con más de dos minutos en estado `enviando`. La vista Integraciones muestra cuándo un evento quedó consolidado. Ver [adapter.ts](../../lib/zoho/adapter.ts), [outbox.ts](../../lib/zoho/outbox.ts), [IntegrationsPanel.tsx](../../app/admin/integraciones/IntegrationsPanel.tsx) y [supervisor-zoho-api.mjs](../../tests/e2e/supervisor-zoho-api.mjs).
+
+La regla 2 se volvió a ejecutar desde una copia aislada limpia (`C:\a4cv`) tras `npm ci`: lint, TypeScript, revisión de plantillas y build local pasaron. La regresión final (`npm run test:e2e:isolated`) terminó con 16 suites con conteo: **784 ✅ / 0 ❌**; los cuatro procesos restantes terminaron con exit 0 sin conteo. `supervisor-zoho-api.mjs`: **39 ✅ / 0 ❌**. La suite cubre una ráfaga de 11 validaciones, ocho tareas únicas y máximo un token, igualdad con el snapshot final, consolidación visible, actualización de un solo Gate, renovación 401, 429 y reintento sin duplicados, así como rescate de filas `enviando` y `pendiente` antiguas. `supervisor-a4.mjs` mantiene **119 ✅ / 0 ❌** en modo archivo. `schemaVersion` continúa en 9; no fue necesaria una migración.
+
+Las URLs del simulador se verifican antes de iniciar la app y solo aceptan loopback; no se usaron credenciales reales ni se llamó a Zoho. `ZOHO_TRANSPORT=file` y `.env.local` no se modificaron. Commit: `52c739e` (`A4c: token en caché, cola por expediente y envíos solo de cambios`).
+
 ## Capturas ficticias
 
 - [Integraciones: pendientes, enviados, fallidos y Reintentar](img/a4-integraciones.png)
@@ -68,4 +86,4 @@ Las imágenes contienen únicamente folios, responsables, fechas y estados ficti
 
 ## Servidor local
 
-Se compiló la copia de OneDrive en modo local con `npm run build`, se ejecutó `npm run db:migrate` sin seed (`schemaVersion=9`) y se inició con `npm run start:local`. `http://localhost:3140/api/health` respondió HTTP 200, `modo=local` y `schemaVersion=9`. El servidor quedó activo.
+Después de A4c se detuvo el proceso anterior de :3140, se compiló la copia de OneDrive en modo local con `npm run build`, se ejecutó `npm run db:migrate` (sin seed; `schemaVersion=9`) y se inició con `npm run start:local`. `http://localhost:3140/api/health` respondió HTTP 200, `modo=local` y `schemaVersion=9`; el servidor quedó activo con el código de `52c739e`.
