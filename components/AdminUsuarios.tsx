@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Dot, SmallButton } from "@/components/ui";
+import { FormEvent, useEffect, useState } from "react";
+import { Dot, EmptyState, MessageBox, PageHeading, Panel, SmallButton, StatusBadge } from "@/components/ui";
 import { EstadoUsuario, ROLE_LABEL, Role, usuariosIniciales } from "@/data/mock";
-import { useSession } from "@/lib/session";
+import { formatoFechaHora } from "@/lib/fechas";
 
 const GRUPOS: { rol: Role; titulo: string }[] = [
   { rol: "cliente", titulo: "Clientes" },
@@ -12,160 +12,229 @@ const GRUPOS: { rol: Role; titulo: string }[] = [
 const DOT = { pendiente: "riesgo", activo: "entiempo", bloqueado: "atrasado" } as const;
 const LABEL: Record<EstadoUsuario, string> = { pendiente: "Pendiente de revisión", activo: "Activo", bloqueado: "Bloqueado" };
 
-export default function AdminUsuarios() {
-  const session = useSession();
-  const [usuarios, setUsuarios] = useState(usuariosIniciales);
-  const [localUsers, setLocalUsers] = useState<{ id: string; email: string; display_name: string; role: Role; status: EstadoUsuario; last_login_at: string | null; responsible_count: number; must_change_password: number; mfa_enabled: number }[]>([]);
-  const [requests, setRequests] = useState<{ id: string; email: string; display_name: string; requested_role: Role; created_at: string }[]>([]);
-  const [newManager, setNewManager] = useState({ displayName: "", email: "" });
-  const [managerMessage, setManagerMessage] = useState("");
-  const [setupUrl, setSetupUrl] = useState("");
-  const localMode = process.env.NEXT_PUBLIC_MODO === "local";
-  useEffect(() => {
-    if (!localMode || !session) return;
-    const endpoint = session.role === "admin_seguridad" ? "/api/admin/users" : "/api/coordinator/requests";
-    void fetch(endpoint).then((response) => response.json()).then((data: { users?: typeof localUsers; requests?: typeof requests }) => {
-      if (data.users) setLocalUsers(data.users);
-      if (data.requests) setRequests(data.requests);
-    });
-  }, [localMode, session]);
+type AdminUser = {
+  id: string;
+  email: string;
+  display_name: string;
+  role: Role;
+  status: EstadoUsuario;
+  last_login_at: string | null;
+  responsible_count: number;
+  must_change_password: number;
+  mfa_enabled: number;
+};
+type RegistrationRequest = { id: string; email: string; display_name: string; requested_role: Role; created_at: string };
 
-  if (localMode && session?.role === "coordinador_idc") {
-    const decide = async (requestId: string, action: "approve" | "reject") => {
-      const reason = action === "reject" ? window.prompt("Motivo obligatorio del rechazo:")?.trim() : undefined;
-      if (action === "reject" && !reason) return;
-      await fetch("/api/coordinator/requests", {
+export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; role: Role | null }) {
+  const usuarios = mode === "demo" ? usuariosIniciales : [];
+  const [localUsers, setLocalUsers] = useState<AdminUser[]>([]);
+  const [requests, setRequests] = useState<RegistrationRequest[]>([]);
+  const [newManager, setNewManager] = useState({ displayName: "", email: "" });
+  const [managerMessage, setManagerMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [setupUrl, setSetupUrl] = useState("");
+  const [loading, setLoading] = useState(mode === "local" && Boolean(role));
+  const [error, setError] = useState(mode === "local" && !role ? "No se pudo identificar la sesión administrativa." : "");
+  const [success, setSuccess] = useState("");
+  const isLocal = mode === "local";
+
+  useEffect(() => {
+    if (!isLocal || !role) return;
+    const controller = new AbortController();
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const endpoint = role === "admin_seguridad" ? "/api/admin/users" : "/api/coordinator/requests";
+        const response = await fetch(endpoint, { signal: controller.signal });
+        const data = await response.json() as { users?: AdminUser[]; requests?: RegistrationRequest[]; error?: string };
+        if (!response.ok) throw new Error(data.error ?? "No se pudieron cargar las cuentas.");
+        if (data.users) setLocalUsers(data.users);
+        if (data.requests) setRequests(data.requests);
+      } catch (cause) {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "No se pudieron cargar las cuentas.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [isLocal, role]);
+
+  async function refreshUsers() {
+    const response = await fetch("/api/admin/users");
+    const data = await response.json() as { users?: AdminUser[]; error?: string };
+    if (!response.ok || !data.users) throw new Error(data.error ?? "No se pudo actualizar la lista de cuentas.");
+    setLocalUsers(data.users);
+  }
+
+  async function decide(requestId: string, action: "approve" | "reject") {
+    const reason = action === "reject" ? window.prompt("Motivo obligatorio del rechazo:")?.trim() : undefined;
+    if (action === "reject" && !reason) return;
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetch("/api/coordinator/requests", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ requestId, action, reason }),
       });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "No fue posible actualizar la solicitud.");
       setRequests((current) => current.filter((request) => request.id !== requestId));
-    };
-    return (
-      <section className="overflow-hidden rounded-sm">
-        <h3 className="bg-[#5885b1] px-3 py-1 text-sm font-bold text-white">Solicitudes de registro</h3>
-        <div className="space-y-2 bg-[#b6cde3] p-3 text-[#0d1f33]">
-          {requests.map((request) => (
-            <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2 text-sm">
-              <span><b>{request.display_name}</b><span className="ml-2 text-xs text-slate-500">{request.email}</span></span>
-              <span className="flex gap-2">
-                <SmallButton onClick={() => void decide(request.id, "approve")}>Aprobar</SmallButton>
-                <SmallButton onClick={() => void decide(request.id, "reject")}>Rechazar</SmallButton>
-              </span>
-            </div>
-          ))}
-          {!requests.length && <p className="text-sm">No hay solicitudes pendientes.</p>}
-        </div>
-      </section>
-    );
+      setSuccess(action === "approve" ? "Solicitud aprobada." : "Solicitud rechazada.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No fue posible actualizar la solicitud.");
+    }
   }
 
-  if (localMode && session?.role === "admin_seguridad") {
-    const refreshUsers = async () => {
-      const response = await fetch("/api/admin/users");
-      const data = await response.json() as { users: typeof localUsers };
-      setLocalUsers(data.users);
-    };
-    const change = async (userId: string, action: "block" | "unblock" | "revoke" | "reset_password" | "reset_client_password" | "disable_mfa") => {
-      const reason = action === "disable_mfa" ? window.prompt("Motivo obligatorio para desvincular MFA:")?.trim() : undefined;
-      if (action === "disable_mfa" && !reason) return;
+  async function change(userId: string, action: "block" | "unblock" | "revoke" | "reset_password" | "reset_client_password" | "disable_mfa") {
+    const reason = action === "disable_mfa" ? window.prompt("Motivo obligatorio para desvincular MFA:")?.trim() : undefined;
+    if (action === "disable_mfa" && !reason) return;
+    setError("");
+    setSuccess("");
+    try {
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId, action, reason }),
       });
       const data = await response.json() as { error?: string; setupUrl?: string; unassignedCount?: number };
-      if (!response.ok) {
-        setManagerMessage(data.error ?? "No fue posible actualizar el usuario.");
-      } else if (action === "reset_password" && data.setupUrl) {
+      if (!response.ok) throw new Error(data.error ?? "No fue posible actualizar la cuenta.");
+      if ((action === "reset_password" || action === "reset_client_password") && data.setupUrl) {
         setSetupUrl(data.setupUrl);
-        setManagerMessage("Enlace de definición generado. Entrégalo al Gestor IDC; vence en 24 horas y solo puede usarse una vez.");
+        setSuccess("Enlace de definición generado. Entrégalo a la persona titular; vence en 24 horas y solo puede usarse una vez.");
       } else if (action === "block" && data.unassignedCount) {
-        setManagerMessage(`${data.unassignedCount} expediente(s) quedó(aron) sin responsable activo; se notificó a los demás Gestores IDC.`);
+        setSuccess(`${data.unassignedCount} expediente(s) quedó(aron) sin responsable activo; se notificó a los demás Gestores IDC.`);
+      } else {
+        setSuccess("Cuenta actualizada.");
       }
       await refreshUsers();
-    };
-    const createManager = async (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setManagerMessage("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No fue posible actualizar la cuenta.");
+    }
+  }
+
+  async function createManager(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setManagerMessage(null);
+    setSetupUrl("");
+    try {
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "create_gestor", displayName: newManager.displayName, email: newManager.email }),
       });
       const data = await response.json() as { error?: string; setupUrl?: string };
-      if (!response.ok) {
-        setManagerMessage(data.error ?? "No fue posible crear el Gestor IDC.");
-        return;
-      }
+      if (!response.ok) throw new Error(data.error ?? "No fue posible crear el Gestor IDC.");
       setNewManager({ displayName: "", email: "" });
       setSetupUrl(data.setupUrl ?? "");
-      setManagerMessage("Gestor IDC creado. Entrega el enlace al Gestor IDC; vence en 24 horas y solo puede usarse una vez.");
+      setManagerMessage({ tone: "success", text: "Gestor IDC creado. Entrega el enlace de un solo uso; vence en 24 horas." });
       await refreshUsers();
-    };
-    return (
-      <section className="overflow-hidden rounded-sm">
-        <h3 className="bg-[#5885b1] px-3 py-1 text-sm font-bold text-white">Administración de Gestores IDC</h3>
-        <div className="space-y-2 bg-[#b6cde3] p-3 text-[#0d1f33]">
-          <form onSubmit={createManager} className="grid gap-2 bg-white p-3 sm:grid-cols-4">
-            <input required value={newManager.displayName} onChange={(event) => setNewManager({ ...newManager, displayName: event.target.value })} placeholder="Nombre completo" className="border px-2 py-1 text-sm" />
-            <input required type="email" value={newManager.email} onChange={(event) => setNewManager({ ...newManager, email: event.target.value })} placeholder="Correo" className="border px-2 py-1 text-sm" />
-            <button type="submit" className="border border-[#5885b1] px-2 py-1 text-sm font-bold sm:col-span-2">Crear Gestor IDC</button>
-            {managerMessage && <p className="text-xs sm:col-span-4">{managerMessage}</p>}
-            {setupUrl && <p className="break-all bg-amber-100 p-2 text-sm font-bold sm:col-span-4">Enlace de un solo uso (vence en 24 horas): {setupUrl}</p>}
-          </form>
-          {localUsers.map((user) => (
-            <div key={user.id} className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2 text-sm">
-              <span><b>{user.display_name}</b><span className="ml-2 text-xs text-slate-500">{user.email}</span><span className="ml-2 text-xs">Último acceso: {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "nunca"} · Responsables: {user.responsible_count}</span></span>
-              <span className="flex gap-2">
-                <span className="text-xs font-bold">{user.status} · MFA: {user.mfa_enabled ? "activo" : "no vinculado"}</span>
-                {user.status === "bloqueado"
-                  ? <SmallButton onClick={() => void change(user.id, "unblock")}>Desbloquear</SmallButton>
-                  : <SmallButton onClick={() => void change(user.id, "block")}>Bloquear</SmallButton>}
-                <SmallButton onClick={() => void change(user.id, "revoke")}>Revocar sesiones</SmallButton>
-                {user.role === "coordinador_idc" && <SmallButton onClick={() => void change(user.id, "reset_password")}>Restablecer contraseña</SmallButton>}
-                {user.role === "cliente" && <SmallButton onClick={() => void change(user.id, "reset_client_password")}>Generar recuperación</SmallButton>}
-                {Boolean(user.mfa_enabled) && <SmallButton onClick={() => void change(user.id, "disable_mfa")}>Desvincular MFA</SmallButton>}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-    );
+    } catch (cause) {
+      setManagerMessage({ tone: "error", text: cause instanceof Error ? cause.message : "No fue posible crear el Gestor IDC." });
+    }
   }
 
-  const cambiar = (id: string, estado: EstadoUsuario) =>
-    setUsuarios((us) => us.map((u) => (u.id === id ? { ...u, estado } : u)));
-
-  return (
-    <section className="overflow-hidden rounded-sm">
-      <h3 className="bg-[#5885b1] px-3 py-1 text-sm font-bold text-white">Administración de usuarios</h3>
-      <div className="space-y-3 bg-[#b6cde3] p-3 text-[#0d1f33]">
-        {GRUPOS.map((g) => (
-          <div key={g.rol}>
-            <h4 className="flex justify-between bg-[#8fb0d1] px-3 py-1 text-sm">
-              <span>{g.titulo}</span><span>Estatus</span>
-            </h4>
-            <ul>
-              {usuarios.filter((u) => u.rol === g.rol).map((u) => (
-                <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2 text-sm">
-                  <span>
-                    <span className="font-bold">{u.nombre}</span>
-                    <span className="ml-2 text-xs text-slate-500">{ROLE_LABEL[u.rol]}</span>
-                  </span>
-                  <span className="flex items-center gap-3">
-                    <span className="flex items-center gap-2 text-xs font-bold"><Dot tipo={DOT[u.estado]} />{LABEL[u.estado]}</span>
-                    {u.estado === "pendiente" && <SmallButton onClick={() => cambiar(u.id, "activo")}>Aprobar</SmallButton>}
-                    {u.estado === "activo" && <SmallButton onClick={() => cambiar(u.id, "bloqueado")}>Bloquear</SmallButton>}
-                    {u.estado === "bloqueado" && <SmallButton onClick={() => cambiar(u.id, "activo")}>Habilitar</SmallButton>}
+  if (isLocal && role === "coordinador_idc") {
+    return (
+      <div className="space-y-4">
+        <PageHeading title="Solicitudes de registro" description="Revisa y responde las solicitudes pendientes." />
+        {error && <MessageBox tone="error">{error}</MessageBox>}
+        {success && <MessageBox tone="success">{success}</MessageBox>}
+        <Panel title="Solicitudes de registro">
+          {loading ? <MessageBox>Cargando solicitudes…</MessageBox> : requests.length ? (
+            <ul className="space-y-2">
+              {requests.map((request) => (
+                <li key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded bg-white p-3 text-sm">
+                  <span><strong>{request.display_name}</strong><span className="ml-2 text-slate-600">{request.email}</span></span>
+                  <span className="flex gap-2">
+                    <SmallButton onClick={() => void decide(request.id, "approve")}>Aprobar</SmallButton>
+                    <SmallButton onClick={() => void decide(request.id, "reject")}>Rechazar</SmallButton>
                   </span>
                 </li>
               ))}
             </ul>
-          </div>
-        ))}
-        <p className="text-xs text-slate-600">Demostración: los cambios no se guardan al recargar.</p>
+          ) : <EmptyState>No hay solicitudes pendientes.</EmptyState>}
+        </Panel>
       </div>
-    </section>
+    );
+  }
+
+  if (isLocal && role === "admin_seguridad") {
+    return (
+      <div className="space-y-4">
+        <PageHeading title="Cuentas" description="Administra usuarios, accesos, recuperación y MFA." />
+        {loading && <MessageBox>Cargando cuentas…</MessageBox>}
+        {error && <MessageBox tone="error">{error}</MessageBox>}
+        {success && <MessageBox tone="success">{success}</MessageBox>}
+        {setupUrl && <MessageBox tone="warning">Enlace de un solo uso (vence en 24 horas): <span className="break-all font-semibold">{setupUrl}</span></MessageBox>}
+        <Panel title="Alta de Gestor IDC">
+          <form onSubmit={createManager} className="grid gap-3 rounded-lg bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="text-sm font-semibold">Nombre completo
+              <input required value={newManager.displayName} onChange={(event) => setNewManager({ ...newManager, displayName: event.target.value })} className="mt-1 w-full rounded border p-2 font-normal" />
+            </label>
+            <label className="text-sm font-semibold">Correo
+              <input required type="email" value={newManager.email} onChange={(event) => setNewManager({ ...newManager, email: event.target.value })} className="mt-1 w-full rounded border p-2 font-normal" />
+            </label>
+            <div className="self-end"><SmallButton type="submit">Crear Gestor IDC</SmallButton></div>
+            {managerMessage && <div className="sm:col-span-2 lg:col-span-3"><MessageBox tone={managerMessage.tone}>{managerMessage.text}</MessageBox></div>}
+          </form>
+        </Panel>
+        <Panel title="Cuentas locales">
+          {loading ? <EmptyState>Cargando cuentas…</EmptyState> : localUsers.length ? (
+            <ul className="space-y-2">
+              {localUsers.map((user) => (
+                <li key={user.id} className="min-w-0 rounded-lg bg-white p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words font-bold">{user.display_name}</p>
+                      <p className="break-all text-xs text-slate-600">{user.email}</p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        {ROLE_LABEL[user.role]} · Último acceso: {user.last_login_at ? formatoFechaHora(user.last_login_at) : "Nunca"} · Responsables: {user.responsible_count}
+                      </p>
+                    </div>
+                    <StatusBadge tone={user.status === "activo" ? "positive" : user.status === "bloqueado" ? "negative" : "warning"}>{LABEL[user.status]}</StatusBadge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {user.status === "bloqueado"
+                      ? <SmallButton onClick={() => void change(user.id, "unblock")}>Desbloquear</SmallButton>
+                      : <SmallButton onClick={() => void change(user.id, "block")}>Bloquear</SmallButton>}
+                    <SmallButton onClick={() => void change(user.id, "revoke")}>Revocar sesiones</SmallButton>
+                    {user.role === "coordinador_idc" && <SmallButton onClick={() => void change(user.id, "reset_password")}>Restablecer contraseña</SmallButton>}
+                    {user.role === "cliente" && <SmallButton onClick={() => void change(user.id, "reset_client_password")}>Generar recuperación</SmallButton>}
+                    {Boolean(user.mfa_enabled) && <SmallButton onClick={() => void change(user.id, "disable_mfa")}>Desvincular MFA</SmallButton>}
+                    {user.must_change_password === 1 && <StatusBadge tone="warning">Debe definir contraseña</StatusBadge>}
+                    <StatusBadge tone={user.mfa_enabled ? "positive" : "neutral"}>MFA: {user.mfa_enabled ? "Activo" : "No vinculado"}</StatusBadge>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : <EmptyState>No hay cuentas que mostrar.</EmptyState>}
+        </Panel>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <PageHeading
+        title="Cuentas de ejemplo"
+        description="Demostración: estos datos no se guardan y no provienen de la base local."
+        badge={<StatusBadge tone="info">Ejemplo</StatusBadge>}
+      />
+      {GRUPOS.map((group) => (
+        <Panel key={group.rol} title={group.titulo}>
+          <ul className="space-y-2">
+            {usuarios.filter((user) => user.rol === group.rol).map((user) => (
+              <li key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded bg-white p-3 text-sm">
+                <span><strong>{user.nombre}</strong><span className="ml-2 text-xs text-slate-600">{ROLE_LABEL[user.rol]}</span></span>
+                <span className="flex items-center gap-2 text-xs font-bold"><Dot tipo={DOT[user.estado]} />{LABEL[user.estado]}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ))}
+      <MessageBox>Las acciones sobre estos datos de ejemplo no se guardan.</MessageBox>
+    </div>
   );
 }
