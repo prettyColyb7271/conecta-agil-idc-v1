@@ -53,7 +53,7 @@ function useClock() {
   return useSyncExternalStore(subscribeClock, () => clockNow, () => null);
 }
 
-export default function AppShell({ role, children }: { role: Role; children: ReactNode }) {
+export default function AppShell({ role, children, navigationDisabled = false }: { role: Role; children: ReactNode; navigationDisabled?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const session = useSession();
@@ -93,6 +93,18 @@ export default function AppShell({ role, children }: { role: Role; children: Rea
           <nav className="flex flex-wrap gap-2 md:flex-col">
             {NAV[role].map((item) => {
               const active = pathname === item.href;
+              if (navigationDisabled) {
+                return (
+                  <span
+                    key={item.href}
+                    aria-disabled="true"
+                    title="Primero vincula OneAuth"
+                    className="cursor-not-allowed rounded border border-white/40 px-3 py-1 text-sm text-white/60"
+                  >
+                    {item.label}
+                  </span>
+                );
+              }
               return (
                 <Link
                   key={item.href}
@@ -104,6 +116,7 @@ export default function AppShell({ role, children }: { role: Role; children: Rea
               );
             })}
           </nav>
+          {navigationDisabled && <p className="text-xs text-amber-100">Primero vincula OneAuth</p>}
 
           <button
             onClick={async () => {
