@@ -30,7 +30,7 @@ try {
   releaseLock = await acquireRegressionLock(path.join(os.tmpdir(), "conecta-agil-e2e.lock"));
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-agil-e2e-"));
   env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir, MFA_ENCRYPTION_KEY: process.env.MFA_ENCRYPTION_KEY ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", EMAIL_TRANSPORT: "file", EMAIL_FROM: "Conecta Agil <no-reply@example.invalid>" };
-  const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201, 3202, 3203, 3204];
+  const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201, 3202, 3203, 3204, 3205];
   if (!Number.isInteger(ports[0]) || ports[0] < 1 || ports[0] > 65535 || ports[0] === 3140 || new Set(ports).size !== ports.length) {
     throw new Error("ISOLATED_PORT debe ser un puerto libre distinto de 3140 y de los usados por las suites.");
   }
@@ -84,6 +84,7 @@ try {
     ["supervisor-seguridad-aislado", ["tests/e2e/supervisor-seguridad-aislado.mjs"], false],
     ["supervisor-seguridad-ataque", ["tests/e2e/supervisor-seguridad-ataque.mjs", root], false],
     ["supervisor-origen-8d", ["tests/e2e/supervisor-origen-8d.mjs", root], false],
+    ["supervisor-a4", ["tests/e2e/supervisor-a4.mjs", root], false],
   ];
   for (const [name, args, needsSharedServer] of suites) {
     if (needsSharedServer && !ready) skip(name, "servidor compartido no disponible");
