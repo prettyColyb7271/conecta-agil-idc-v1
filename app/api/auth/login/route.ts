@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
 import { assertSameOrigin, auditEvent, createMfaChallenge, createSession, MFA_CHALLENGE_COOKIE, MUST_CHANGE_COOKIE, mfaEnabled, sessionCookieOptions, verifyPassword, ROLE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
+import { maskEmail, truncateIp } from "@/lib/audit-privacy";
 import { getDatabase } from "@/lib/db/sqlite";
 import type { Role } from "@/data/mock";
 import { readJson, RequestInputError } from "@/lib/http";
@@ -8,6 +9,10 @@ import { readJson, RequestInputError } from "@/lib/http";
 const failures = new Map<string, number[]>();
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES = 5;
+
+function requestIp(request: Request): string | null {
+  return truncateIp(request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip"));
+}
 
 function isRateLimited(email: string): boolean {
   const recent = (failures.get(email) ?? []).filter((time) => Date.now() - time < WINDOW_MS);
@@ -30,7 +35,7 @@ export async function POST(request: Request) {
     const password = body.password ?? "";
     if (!email || !password || isRateLimited(email)) {
       registerFailure(email);
-      auditEvent({ eventType: "login_bloqueado", entityType: "auth", metadata: { email, ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
+      auditEvent({ eventType: "login_bloqueado", entityType: "auth", metadata: { email: maskEmail(email), ip: requestIp(request) } });
       return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 401 });
     }
 
@@ -41,7 +46,14 @@ export async function POST(request: Request) {
     const validPassword = user ? verifyPassword(password, user.password_hash) : false;
     if (!user || !validPassword) {
       registerFailure(email);
-      auditEvent({ actorId: user?.id ?? null, actorRole: user?.role ?? null, eventType: "login_fallido", entityType: "user", entityId: user?.id ?? null, metadata: { email, ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
+      auditEvent({
+        actorId: user?.id ?? null,
+        actorRole: user?.role ?? null,
+        eventType: "login_fallido",
+        entityType: "user",
+        entityId: user?.id ?? null,
+        metadata: { ...(user ? {} : { email: maskEmail(email) }), ip: requestIp(request) },
+      });
       return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 401 });
     }
     const rejectedRequest = getDatabase().prepare(
@@ -54,7 +66,7 @@ export async function POST(request: Request) {
     failures.delete(email);
     if (mfaEnabled(user.id)) {
       const challenge = createMfaChallenge(user.id);
-      auditEvent({ actorId: user.id, actorRole: user.role, eventType: "mfa_desafio", entityType: "auth", entityId: user.id, metadata: { ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
+      auditEvent({ actorId: user.id, actorRole: user.role, eventType: "mfa_desafio", entityType: "auth", entityId: user.id, metadata: { ip: requestIp(request) } });
       const response = NextResponse.json({ mfaRequired: true });
       response.cookies.set(MFA_CHALLENGE_COOKIE, challenge.token, { httpOnly: true, sameSite: "lax", secure: new URL(request.url).protocol === "https:", path: "/", expires: new Date(challenge.expiresAt) });
       return response;
@@ -62,7 +74,7 @@ export async function POST(request: Request) {
     const session = createSession(user.id);
     const now = new Date().toISOString();
     getDatabase().prepare("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(now, now, user.id);
-    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "login_ok", entityType: "session", entityId: session.sessionId, metadata: { ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, user_agent: request.headers.get("user-agent") ?? null } });
+    auditEvent({ actorId: user.id, actorRole: user.role, eventType: "login_ok", entityType: "session", entityId: session.sessionId, metadata: { ip: requestIp(request) } });
     const response = NextResponse.json({ role: user.role, name: user.display_name, mustChangePassword: user.must_change_password === 1 });
     response.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt, request));
     response.cookies.set(ROLE_COOKIE, user.role, sessionCookieOptions(session.expiresAt, request));

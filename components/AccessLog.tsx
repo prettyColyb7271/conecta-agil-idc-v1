@@ -137,7 +137,7 @@ export default function AccessLog({ mode }: { mode: "demo" | "local" }) {
     <div className="space-y-4">
       <PageHeading
         title="Bitácora de accesos"
-        description="Eventos de auditoría con datos acotados; no se muestran correos, direcciones IP, tokens ni contenido de expedientes."
+        description="Los correos de intentos fallidos se muestran enmascarados y las IP truncadas; no se muestran user-agent, tokens ni contenido de expedientes."
         badge={demo && <StatusBadge tone="info">Ejemplo</StatusBadge>}
       />
       {message && <MessageBox tone="error">{message}</MessageBox>}

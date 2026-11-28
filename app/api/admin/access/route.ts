@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
 import { eventLabel, sanitizeAuditMetadata, type SafeMetadataItem } from "@/lib/admin/access-log";
+import { maskEmail } from "@/lib/audit-privacy";
 import { getCurrentUser, mfaRequiredResponse, passwordChangeRequired } from "@/lib/auth";
-import { formatoFechaHora } from "@/lib/fechas";
+import { formatoFechaHora, inicioDiaHermosillo } from "@/lib/fechas";
 import { getDatabase } from "@/lib/db/sqlite";
 import { ROLE_LABEL, type Role } from "@/data/mock";
 
@@ -17,6 +18,17 @@ type AuditRow = {
   entity_type: string;
   metadata_json: string;
 };
+
+function attemptedEmail(metadataJson: string): string | null {
+  try {
+    const metadata: unknown = JSON.parse(metadataJson);
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+    const email = (metadata as Record<string, unknown>).email;
+    return typeof email === "string" ? maskEmail(email) : null;
+  } catch {
+    return null;
+  }
+}
 
 function isValidDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -42,12 +54,14 @@ function safeEntityLabel(entity: string): string {
 }
 
 function shapeRow(row: AuditRow) {
+  const maskedEmail = attemptedEmail(row.metadata_json);
+  const unrecognizedAccount = row.event_type === "login_fallido" && !row.display_name && maskedEmail !== null;
   return {
     id: row.id,
     createdAt: formatoFechaHora(row.created_at),
-    user: row.display_name ?? "Sistema",
+    user: row.display_name ?? maskedEmail ?? "Sistema",
     role: row.actor_role && row.actor_role in ROLE_LABEL ? ROLE_LABEL[row.actor_role] : "Sistema",
-    event: eventLabel(row.event_type),
+    event: unrecognizedAccount ? "Cuenta inexistente" : eventLabel(row.event_type),
     eventType: row.event_type,
     entity: safeEntityLabel(row.entity_type),
     metadata: sanitizeAuditMetadata(row.metadata_json),
@@ -65,12 +79,12 @@ function buildWhere(params: URLSearchParams) {
     return { error: "Usa fechas válidas en formato AAAA-MM-DD." as const };
   }
   if (from && to && from > to) return { error: "La fecha inicial no puede ser posterior a la fecha final." as const };
-  if (from) { conditions.push("a.created_at >= ?"); values.push(`${from}T00:00:00.000Z`); }
+  if (from) { conditions.push("a.created_at >= ?"); values.push(inicioDiaHermosillo(from)); }
   if (to) {
     const exclusiveEnd = new Date(`${to}T00:00:00.000Z`);
     exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
     conditions.push("a.created_at < ?");
-    values.push(exclusiveEnd.toISOString());
+    values.push(inicioDiaHermosillo(exclusiveEnd.toISOString().slice(0, 10)));
   }
   if (userId) { conditions.push("a.actor_id = ?"); values.push(userId); }
   if (eventType) { conditions.push("a.event_type = ?"); values.push(eventType); }

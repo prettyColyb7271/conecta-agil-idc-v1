@@ -33,6 +33,35 @@ export function formatoFechaHora(fecha: string | Date): string {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
+    timeZone: "America/Hermosillo",
   }).formatToParts(date).map(({ type, value }) => [type, value]));
   return `${values.day}/${values.month}/${values.year} ${values.hour}:${values.minute}`;
+}
+
+export function inicioDiaHermosillo(fecha: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new RangeError("La fecha no es válida.");
+  const date = new Date(`${fecha}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== fecha) {
+    throw new RangeError("La fecha no es válida.");
+  }
+
+  const zonedParts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Hermosillo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date).map(({ type, value }) => [type, value]));
+  const zonedAsUtc = Date.UTC(
+    Number(zonedParts.year),
+    Number(zonedParts.month) - 1,
+    Number(zonedParts.day),
+    Number(zonedParts.hour),
+    Number(zonedParts.minute),
+    Number(zonedParts.second),
+  );
+  return new Date(date.getTime() - (zonedAsUtc - date.getTime())).toISOString();
 }

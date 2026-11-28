@@ -15,7 +15,7 @@ const ok = (n, c, x = "") => { if (c) { pass++; console.log("  ✅", n); } else 
 const SEED = "ConectaLocal-2026!";
 class S { jar = {};
   ck() { return Object.entries(this.jar).map(([k, v]) => `${k}=${v}`).join("; "); }
-  async req(method, p, json) { const h = { origin: B }; if (this.ck()) h.cookie = this.ck(); if (json !== undefined) h["content-type"] = "application/json";
+  async req(method, p, json, extraHeaders = {}) { const h = { origin: B, ...extraHeaders }; if (this.ck()) h.cookie = this.ck(); if (json !== undefined) h["content-type"] = "application/json";
     const r = await fetch(B + p, { method, headers: h, body: json === undefined ? undefined : JSON.stringify(json), redirect: "manual" });
     for (const c of r.headers.getSetCookie()) { const [kv] = c.split(";"); const i = kv.indexOf("="); const v = kv.slice(i + 1); if (!v) delete this.jar[kv.slice(0, i)]; else this.jar[kv.slice(0, i)] = v; }
     const t = await r.text(); let j; try { j = JSON.parse(t); } catch {} return { status: r.status, loc: r.headers.get("location"), ct: r.headers.get("content-type") ?? "", text: t, json: j }; }
@@ -95,19 +95,33 @@ try {
   ok("gestor vuelve a entrar sin código (MFA quitado)", gl3.status === 200 && !gl3.json?.mfaRequired, gl3.text);
 
   console.log("== bitácora");
-  await new S().login("nadie.existe@example.invalid", "MalaClave-123");
+  await new S().req("POST", "/api/auth/login", { email: "nadie.existe@example.invalid", password: "MalaClave-123" }, {
+    "x-forwarded-for": "192.168.56.123, 10.0.0.1",
+    "x-real-ip": "192.168.56.123",
+    "user-agent": "SEGURIDAD_TEST_USER_AGENT",
+  });
   const ev = await a2.get("/api/admin/access");
   const auditEvents = ev.json?.events ?? [];
-  const evText = JSON.stringify(auditEvents);
+  const unknownAttempt = auditEvents.find((event) => event.eventType === "login_fallido" && event.user === "na***@example.invalid");
   ok(
-    "login fallido aparece sin exponer el correo intentado",
-    auditEvents.some((event) => event.eventType === "login_fallido") && !evText.includes("nadie.existe@example.invalid"),
+    "login fallido de cuenta inexistente aparece enmascarado con su etiqueta",
+    unknownAttempt?.event === "Cuenta inexistente" && !JSON.stringify(auditEvents).includes("nadie.existe@example.invalid"),
   );
+  ok("la IP de login fallido aparece truncada y no se muestra user-agent",
+    unknownAttempt?.metadata?.some((item) => item.label === "IP" && item.value === "192.168.56.x") &&
+    !JSON.stringify(auditEvents).includes("SEGURIDAD_TEST_USER_AGENT"),
+    JSON.stringify(unknownAttempt));
+  const evText = JSON.stringify(auditEvents);
   ok("desvinculación MFA aparece en bitácora", /mfa/i.test(evText) && /desvinc|disable|revoc/i.test(evText));
   ok("cliente → 403 en bitácora", (await (async () => { const c = new S(); await c.login("cliente.demo@example.invalid"); return (await c.get("/api/admin/access")).status; })()) === 403);
   ok("Gestor IDC → 403 en bitácora", (await g3.get("/api/admin/access")).status === 403);
   const csv = await a2.get("/api/admin/access?format=csv");
   ok("CSV de bitácora se descarga", csv.ct.includes("text/csv"), csv.ct);
+  ok("CSV conserva correo enmascarado e IP truncada sin correo completo ni user-agent",
+    csv.text.includes("na***@example.invalid") &&
+    csv.text.includes("192.168.56.x") &&
+    !csv.text.includes("nadie.existe@example.invalid") &&
+    !csv.text.includes("SEGURIDAD_TEST_USER_AGENT"));
   ok("CSV sin secretos, códigos ni contraseñas", ![sec, gsec, ...backups, SEED].some((s) => s && csv.text.includes(s)) && !/password_hash|secret_ciphertext/i.test(csv.text));
 
   console.log("== recuperación de cliente");

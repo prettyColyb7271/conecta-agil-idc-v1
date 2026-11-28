@@ -1,3 +1,5 @@
+import { maskEmail, truncateIp } from "@/lib/audit-privacy";
+
 export const AUDIT_EVENT_LABELS: Record<string, string> = {
   aceptacion_aviso_privacidad: "Aviso de privacidad aceptado",
   alta_expediente: "Alta de expediente",
@@ -67,7 +69,9 @@ export const AUDIT_EVENT_LABELS: Record<string, string> = {
 };
 
 const SAFE_METADATA_FIELDS = {
+  email: "Cuenta intentada",
   expedientes_sin_responsable_activo: "Expedientes sin responsable activo",
+  ip: "IP",
   mfa: "MFA",
   requested: "Solicitud",
   revoked: "Sesión revocada",
@@ -93,7 +97,13 @@ export function sanitizeAuditMetadata(value: unknown): SafeMetadataItem[] {
   const result: SafeMetadataItem[] = [];
   for (const [key, label] of Object.entries(SAFE_METADATA_FIELDS)) {
     const item = record[key];
-    if (typeof item === "boolean") {
+    if (key === "email" && typeof item === "string") {
+      const masked = maskEmail(item);
+      if (masked) result.push({ label, value: masked });
+    } else if (key === "ip" && typeof item === "string") {
+      const truncated = truncateIp(item);
+      if (truncated) result.push({ label, value: truncated });
+    } else if (typeof item === "boolean") {
       result.push({ label, value: item ? "Sí" : "No" });
     } else if (key === "expedientes_sin_responsable_activo" && typeof item === "number" && Number.isSafeInteger(item) && item >= 0) {
       result.push({ label, value: String(item) });
