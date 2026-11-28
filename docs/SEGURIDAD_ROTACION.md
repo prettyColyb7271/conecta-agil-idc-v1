@@ -31,6 +31,6 @@ Usa el procedimiento local ya preparado en [zoho-renovar-token.ps1](../../../00_
 powershell -ExecutionPolicy Bypass -File ".\00_LEEME_PRIMERO\HERRAMIENTAS\zoho-renovar-token.ps1"
 ```
 
-En la consola oficial de Zoho crea un Self Client nuevo (o regenera el secreto) y genera un grant code con los alcances que pide la herramienta. El script solicita el client secret y el grant code de forma oculta, actualiza `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET` y `ZOHO_REFRESH_TOKEN` en `.env.local` y trata de revocar el refresh token anterior. Si la revocación automática falla, revócalo desde la consola de Zoho. No copies credenciales o tokens en informes, commits ni mensajes.
+En la consola oficial de Zoho crea un Self Client nuevo (o regenera el secreto) y genera un grant code con los alcances que pide la herramienta. El script solicita el client secret y el grant code de forma oculta y actualiza `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET` y `ZOHO_REFRESH_TOKEN` en `.env.local`. El script actual no revoca el refresh token anterior: revocarlo puede invalidar también el nuevo token del mismo Self Client. La dueña confirmó que regenerar el Client Secret es suficiente para invalidar el anterior; no intentes revocarlo manualmente como parte de esta rotación. No copies credenciales o tokens en informes, commits ni mensajes.
 
 Mantén `ZOHO_TRANSPORT=file` salvo que la dueña y el supervisor acuerden expresamente una prueba real; después de una renovación, una prueba API requiere reiniciar la aplicación para cargar la configuración.

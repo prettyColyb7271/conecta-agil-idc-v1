@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { MessageBox, Panel, SmallButton, StatusBadge } from "@/components/ui";
 
 type MfaState = { enabled: boolean; setup?: { secret: string; otpauthUri: string }; backupCodes?: string[] };
 
@@ -37,25 +38,38 @@ export default function MfaSetup() {
     else { setState({ enabled: true, backupCodes: data.backupCodes }); setMessage("MFA activado."); }
   }
 
-  return <main className="mx-auto max-w-xl space-y-4 p-6">
-    <h1 className="text-2xl font-bold">Seguridad de la cuenta</h1>
-    <p>La autenticación de dos factores protege las cuentas administrativas.</p>
-    {state.enabled ? <p className="font-semibold text-green-700">MFA activo.</p> : <>
-      {!state.setup && <button className="rounded bg-blue-700 px-4 py-2 text-white" onClick={start}>Iniciar vinculación</button>}
-      {state.setup && <section className="space-y-2 rounded border p-4">
-        <p>Escanea este código con OneAuth u otra aplicación Authenticator:</p>
-        <QRCodeSVG value={state.setup.otpauthUri} size={224} marginSize={4} title="Código QR de vinculación MFA" />
-        <p>Si no puedes escanearlo, agrega la cuenta manualmente, selecciona código basado en tiempo e introduce este secreto:</p>
-        <code className="block font-bold">{state.setup.secret}</code>
-        <details>
-          <summary>Mostrar URI para aplicaciones compatibles</summary>
-          <code className="block break-all text-sm">{state.setup.otpauthUri}</code>
-        </details>
-        <input className="rounded border p-2" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Código de 6 dígitos" />
-        <button className="rounded bg-blue-700 px-4 py-2 text-white" onClick={confirm}>Confirmar MFA</button>
-      </section>}
-    </>}
-    {state.backupCodes && <section><h2 className="font-bold">Códigos de respaldo</h2><p>Guárdalos ahora; no volverán a mostrarse.</p><pre>{state.backupCodes.join("\n")}</pre></section>}
-    {message && <p role="status">{message}</p>}
-  </main>;
+  return <div className="space-y-4">
+    <Panel title="Vincular OneAuth">
+      <div className="space-y-3 rounded bg-white p-3">
+        <p>La autenticación de dos factores protege las cuentas administrativas.</p>
+        {state.enabled ? <StatusBadge tone="positive">MFA activo</StatusBadge> : <>
+          {!state.setup && <SmallButton onClick={() => void start()}>Iniciar vinculación</SmallButton>}
+          {state.setup && <section className="space-y-2 rounded border p-4">
+            <p>Escanea este código con OneAuth u otra aplicación Authenticator:</p>
+            <QRCodeSVG value={state.setup.otpauthUri} size={224} marginSize={4} title="Código QR de vinculación MFA" />
+            <p>Si no puedes escanearlo, agrega la cuenta manualmente, selecciona código basado en tiempo e introduce este secreto:</p>
+            <code className="block font-bold">{state.setup.secret}</code>
+            <details>
+              <summary>Mostrar URI para aplicaciones compatibles</summary>
+              <code className="block break-all text-sm">{state.setup.otpauthUri}</code>
+            </details>
+            <label className="block text-sm font-semibold">Código de 6 dígitos
+              <input className="mt-1 block max-w-xs rounded border p-2 font-normal" value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" />
+            </label>
+            <SmallButton onClick={() => void confirm()}>Confirmar MFA</SmallButton>
+          </section>}
+        </>}
+        {message && <MessageBox tone={message.includes("activado") ? "success" : "error"}>{message}</MessageBox>}
+      </div>
+    </Panel>
+    <Panel title="Códigos de respaldo">
+      {state.backupCodes ? (
+        <div className="rounded bg-white p-3">
+          <p>Guárdalos ahora; no volverán a mostrarse.</p>
+          <pre className="mt-2 overflow-auto rounded bg-slate-50 p-3 text-sm">{state.backupCodes.join("\n")}</pre>
+        </div>
+      ) : <MessageBox>Los códigos se muestran una sola vez al terminar la vinculación.</MessageBox>}
+    </Panel>
+    <MessageBox tone="warning">No proyectes esta pantalla: el QR y los códigos dan acceso a la cuenta.</MessageBox>
+  </div>;
 }
