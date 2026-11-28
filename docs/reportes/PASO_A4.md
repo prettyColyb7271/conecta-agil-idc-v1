@@ -1,6 +1,6 @@
 # Paso A4 · Zoho en modo archivo
 
-Rama `paso-a4`, creada desde `desarrollo` en `3554d68`. Estado al 27/11/2026: implementación y regresión completas; pendiente de aprobación del supervisor. No hubo push ni merge.
+Rama `paso-a4`, creada desde `desarrollo` en `3554d68`. Estado al 28/11/2026: A4e fue aprobado por la dueña; A4f quedó implementado en `3e0857c` y está pendiente de revisión del supervisor. No hubo push ni merge. No se hizo la prueba real con Zoho.
 
 ## Alcance implementado
 
@@ -106,4 +106,14 @@ La suite dirigida `supervisor-a4.mjs` terminó con **126 ✅ / 0 ❌**. Comprueb
 
 La Regla 2 completa se ejecutó en `C:\a4ev`, una copia aislada tras `npm ci`: lint, TypeScript, revisión de plantillas y build local pasaron. `npm run test:e2e:isolated` terminó con **806 ✅ / 0 ❌** en las 16 suites con conteo; cuatro procesos adicionales (`regresiones-pr1`, `migration-004-with-data`, `db-migrate` y `db-seed`) terminaron con exit 0 sin conteo. `supervisor-a4.mjs`: **126 ✅ / 0 ❌**; `supervisor-zoho-api.mjs`: **54 ✅ / 0 ❌**. La prueba API de Zoho usó solo el simulador local.
 
-El folio de semilla se confirmó en `lib/db/seed.ts`; la base real de OneDrive no se sembró ni se alteró para las pruebas. Después del commit A4e se compiló OneDrive, `npm run db:migrate` confirmó `schemaVersion=9` (sin `db:seed`) y se inició con `npm run start:local`. `/api/health` respondió HTTP 200, `modo=local`, `schemaVersion=9`. `.env.local` y `ZOHO_TRANSPORT` no se tocaron; no se llamó a Zoho real ni hubo push o merge. A4 permanece pendiente de aprobación.
+El folio de semilla se confirmó en `lib/db/seed.ts`; la base real de OneDrive no se sembró ni se alteró para las pruebas. Después del commit A4e se compiló OneDrive, `npm run db:migrate` confirmó `schemaVersion=9` (sin `db:seed`) y se inició con `npm run start:local`. `/api/health` respondió HTTP 200, `modo=local`, `schemaVersion=9`. `.env.local` y `ZOHO_TRANSPORT` no se tocaron; no se llamó a Zoho real ni hubo push o merge. A4e quedó aprobado; A4f se documenta a continuación.
+
+## A4f · Rotación segura de la clave MFA
+
+El commit `3e0857c` extrae el cifrado AES-GCM a [mfa-crypto.ts](../../lib/mfa-crypto.ts), conserva la validación de claves hex/base64 de 32 bytes y permite volver a cifrar todas las filas `user_mfa` dentro de una transacción. Antes de actualizar, `mfa:rotar-clave` crea una copia con `VACUUM INTO` bajo `LOCAL_DATA_DIR/respaldos/`; cualquier error revierte la transacción y termina con código distinto de cero. Cada fila recibe un IV nuevo y el script no modifica `last_used_step` ni los códigos de respaldo. `mfa:nueva-clave` imprime una única clave hexadecimal de 32 bytes. El procedimiento operativo, incluidos los pasos para renovar Resend y Zoho, está en [SEGURIDAD_ROTACION.md](../SEGURIDAD_ROTACION.md).
+
+Si el descifrado TOTP falla, `verifyUserMfa` registra `mfa_descifrado_fallido` sin metadatos sensibles, considera inválido el TOTP y continúa comprobando códigos de respaldo. La suite [supervisor-mfa-rotacion.mjs](../../tests/e2e/supervisor-mfa-rotacion.mjs) valida el re-cifrado y el mismo TOTP, la recuperación con código de respaldo y auditoría ante clave actual incorrecta, la reversión y el respaldo ante clave anterior incorrecta, y que las salidas no revelen claves.
+
+La Regla 2 se ejecutó en una copia aislada (`C:\a4f-mfa-validation`) tras `npm ci`: lint, TypeScript, revisión de plantillas y build en modo local pasaron. `npm run test:e2e:isolated` reportó **816 ✅ / 0 ❌ en 17 suites**; cuatro procesos adicionales terminaron con exit 0 sin conteo (`regresiones-pr1`, `migration-004-with-data`, `db-migrate` y `db-seed`). La suite nueva `supervisor-mfa-rotacion.mjs` dio **10 ✅ / 0 ❌**. `supervisor-a4.mjs` conservó **126 ✅ / 0 ❌** y `supervisor-zoho-api.mjs`, **54 ✅ / 0 ❌**. Todo se ejecutó con una base temporal y claves ficticias. `npm ci` señaló siete alertas moderadas ya existentes en dependencias; no se modificaron paquetes.
+
+Por instrucción de la dueña, no se leyó ni modificó `.env.local`, no se re-cifró ni migró la base real y no se reinició :3140. Tampoco se llamó a Zoho real ni se hizo push o merge. El build local/servidor :3140 queda pendiente hasta que la dueña autorice reiniciar; el proceso existente no se tocó.
