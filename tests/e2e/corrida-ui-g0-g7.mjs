@@ -1,14 +1,38 @@
 import { execFileSync, spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { chromium } from "playwright-core";
 
-const root = process.argv[2];
+const root = path.resolve(process.argv[2] ?? process.cwd());
 const port = 3203;
 const base = `http://localhost:${port}`;
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-a2-"));
-const env = { ...process.env, APP_MODE: "local", NEXT_PUBLIC_MODO: "local", LOCAL_DATA_DIR: dataDir };
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-a5-flow-"));
+const dataDirSnapshots = `${dataDir}-snapshots`;
+const demoDocsDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-a5-docs-"));
+const screenshotDir = path.resolve(process.env.CAPTURAS_DIR?.trim() || path.join(root, "docs", "reporte", "capturas"));
+const demoPassword = "ConectaLocal-2026!";
+const env = {
+  ...process.env,
+  APP_MODE: "local",
+  NEXT_PUBLIC_MODO: "local",
+  LOCAL_DATA_DIR: dataDir,
+  DEMO_DOCS_DIR: demoDocsDir,
+  MFA_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  MFA_REQUIRED_ROLES: "admin_seguridad",
+  EMAIL_TRANSPORT: "file",
+  EMAIL_FROM: "Conecta Agil <no-reply@example.invalid>",
+  RESEND_API_KEY: "",
+  ZOHO_TRANSPORT: "file",
+  ZOHO_CLIENT_ID: "",
+  ZOHO_CLIENT_SECRET: "",
+  ZOHO_REFRESH_TOKEN: "",
+  ZOHO_PORTAL_ID: "",
+  ZOHO_PROJECT_ID: "",
+  ZOHO_DC: "com",
+};
 let pass = 0, fail = 0;
 const failures = [];
 function ok(name, value, detail = "") {
@@ -43,11 +67,43 @@ class Session {
   post(url, body) { return this.request("POST", url, body); }
   patch(url, body) { return this.request("PATCH", url, body); }
 }
+
+function base32Decode(value) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let buffer = 0;
+  const bytes = [];
+  for (const character of value) {
+    buffer = (buffer << 5) | alphabet.indexOf(character);
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((buffer >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function totp(secret) {
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = crypto.createHmac("sha1", base32Decode(secret)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 15;
+  const value = (digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000;
+  return String(value).padStart(6, "0");
+}
+
 const pdf = (name) => new Blob([`%PDF-1.4\n% ${name}\n%%EOF\n`], { type: "application/pdf" });
 function form(fields, name, subgate) {
   const data = new FormData();
   for (const [key, value] of Object.entries(fields)) data.set(key, value);
-  data.set("file", pdf(name), `${name}.pdf`);
+  const fixture = fields.requirementCode
+    ? `${fields.requirementCode}.pdf`
+    : fields.eventType
+      ? `evento-${fields.eventType}.pdf`
+      : null;
+  const contents = fixture ? fs.readFileSync(path.join(demoDocsDir, fixture)) : pdf(name);
+  data.set("file", new Blob([contents], { type: "application/pdf" }), `${name}.pdf`);
   if (subgate) data.set("subgateFile", subgate, "subgate.pdf");
   return data;
 }
@@ -58,21 +114,118 @@ const labels = {
 };
 
 let server;
+let browser;
+let captureCount = 0;
+
+async function captureScreenshot(session, route, filename, options = {}) {
+  if (process.env.CAPTURAS !== "1") return;
+  const context = await browser.newContext({
+    viewport: options.mobile ? { width: 390, height: 844 } : { width: 1366, height: 768 },
+    deviceScaleFactor: 1,
+  });
+  await context.addInitScript((dark) => {
+    localStorage.setItem("conecta-prefs", JSON.stringify({ dark, lang: "es" }));
+  }, options.dark === true);
+  if (session) {
+    await context.addCookies(Object.entries(session.cookies).map(([name, value]) => ({ name, value, url: base })));
+  }
+  const page = await context.newPage();
+  try {
+    const response = await page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(500);
+    if (!response?.ok()) throw new Error(`Captura ${filename}: ${route} respondió HTTP ${response?.status() ?? "sin respuesta"}.`);
+    if (options.openPreferences) {
+      await page.getByRole("button", { name: "Configuración" }).click();
+      await page.waitForTimeout(100);
+    }
+    if (options.selectFolio) {
+      const expedienteSelect = page.locator("select").first();
+      const value = await expedienteSelect.locator("option").evaluateAll((items, folio) => {
+        return items.find((item) => item.textContent?.startsWith(`${folio} ·`))?.value ?? null;
+      }, options.selectFolio);
+      if (!value) throw new Error(`Captura ${filename}: no se encontró el expediente ${options.selectFolio}.`);
+      if (await expedienteSelect.inputValue() !== value) await expedienteSelect.selectOption(value);
+      await page.waitForTimeout(500);
+    }
+    if (options.selectGate) {
+      const gateNumber = Number(options.selectGate.slice(1)) + 1;
+      const gatePanel = page.locator('section[aria-label="Gates del expediente"]');
+      try {
+        await gatePanel.waitFor({ state: "visible", timeout: 5000 });
+      } catch {
+        throw new Error(`Captura ${filename}: no se cargó el panel de Gates.`);
+      }
+      await gatePanel.getByText(`Gate ${gateNumber}`, { exact: true }).click();
+      await page.waitForTimeout(150);
+    }
+    if (options.scrollToText) {
+      const target = page.getByText(options.scrollToText, { exact: true }).first();
+      if (await target.count() === 0) throw new Error(`Captura ${filename}: no se encontró "${options.scrollToText}".`);
+      await target.scrollIntoViewIfNeeded();
+    }
+    const headerParagraphs = page.locator("header p");
+    if (await headerParagraphs.count() > 1) await headerParagraphs.nth(1).evaluate((element) => element.remove());
+    const visibleText = await page.locator("body").innerText();
+    const html = await page.content();
+    const forbidden = [
+      demoPassword,
+      env.MFA_ENCRYPTION_KEY,
+      env.ZOHO_CLIENT_SECRET,
+      env.ZOHO_REFRESH_TOKEN,
+      env.RESEND_API_KEY,
+    ].filter(Boolean);
+    if (forbidden.some((value) => visibleText.includes(value) || html.includes(value))) {
+      throw new Error(`Captura ${filename}: se detectó una credencial en la página.`);
+    }
+    if (options.noQr) {
+      const visibleQr = await page.locator('svg[title*="QR"], svg[aria-label*="QR"], img[src^="data:image"], canvas').count();
+      if (visibleQr !== 0 || /otpauth:/i.test(html)) throw new Error(`Captura ${filename}: la pantalla no debe incluir QR ni URI MFA.`);
+    }
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    const screenshotPath = path.join(screenshotDir, filename);
+    if (options.screenshotHeading) {
+      const heading = page.getByRole("heading", { name: options.screenshotHeading, exact: true });
+      await heading.locator("xpath=..").screenshot({ path: screenshotPath });
+    } else {
+      await page.screenshot({ path: screenshotPath, fullPage: false });
+    }
+    captureCount++;
+    ok(`captura ${filename}`, fs.statSync(path.join(screenshotDir, filename)).size > 0);
+  } finally {
+    await context.close();
+  }
+}
+
+async function capturePublicScreens() {
+  if (process.env.CAPTURAS !== "1") return;
+  await captureScreenshot(null, "/", "01-inicio-sesion.png");
+  await captureScreenshot(null, "/", "02-preferencias-modo-oscuro.png", { dark: true, openPreferences: true });
+  await captureScreenshot(null, "/registro", "03-solicitud-registro.png");
+}
 try {
   const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
-  execFileSync(process.execPath, [tsx, "scripts/db-migrate.ts"], { cwd: root, env, stdio: "pipe" });
-  const seed = JSON.parse(execFileSync(process.execPath, [tsx, "scripts/db-seed.ts"], { cwd: root, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
-  server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(port)], { cwd: root, env, stdio: "ignore" });
+  execFileSync(process.execPath, [tsx, "scripts/demo-seed.ts"], { cwd: root, env, stdio: "pipe" });
+  execFileSync(process.execPath, [tsx, "scripts/demo-docs.ts"], { cwd: root, env, stdio: "pipe" });
+  const password = demoPassword;
+  let serverOutput = "";
+  server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(port)], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  server.stdout?.on("data", (chunk) => { serverOutput += chunk.toString(); });
+  server.stderr?.on("data", (chunk) => { serverOutput += chunk.toString(); });
   let ready = false;
   for (let attempt = 0; attempt < 100; attempt++) {
     try { if ((await fetch(`${base}/api/health`)).ok) { ready = true; break; } } catch {}
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  if (!ready) throw new Error("No inició el servidor aislado de A2.");
+  if (!ready) throw new Error(`No inició el servidor aislado de A5.${serverOutput ? ` ${serverOutput.slice(-2000)}` : ""}`);
+  if (process.env.CAPTURAS === "1") {
+    browser = await chromium.launch({ channel: "msedge", headless: true });
+    await capturePublicScreens();
+  }
   const cliente = new Session(), gestor = new Session(), otro = new Session();
   for (const [session, email] of [[cliente, "cliente.demo@example.invalid"], [gestor, "coordinador.demo@example.invalid"], [otro, "idc2.demo@example.invalid"]]) {
-    must(`login ficticio ${email}`, await session.post("/api/auth/login", { email, password: seed.password }), 200);
+    must(`login ficticio ${email}`, await session.post("/api/auth/login", { email, password }), 200);
   }
+  await captureScreenshot(cliente, "/portal", "05-portal-privacidad-captura.png");
   const list = must("consultar expedientes", await gestor.get("/api/expedientes"), 200);
   const sample = list.expedientes[0];
   const owner = list.options.responsables.find((item) => item.email === "coordinador.demo@example.invalid");
@@ -83,9 +236,10 @@ try {
   const close = (session, endpoint, gateCode) => session.post(`${endpoint}/gates`, { action: "close", gateCode });
   const evidence = (endpoint, type, extra = {}, subgate) => gestor.post(`${endpoint}/documents`, form({ eventType: type, eventDate: "2026-11-27", description: labels[type], ...extra }, type, subgate));
 
-  async function prepararG3(endpoint) {
+  async function prepararG3(endpoint, snapshotName) {
     must("cliente acepta privacidad", await cliente.post(`${endpoint}/privacy`, { version: "aviso-privacidad-v1" }), 200);
     must("cerrar G0", await close(gestor, endpoint, "G0"), 200);
+    if (snapshotName) execFileSync(process.execPath, [tsx, "scripts/demo-snapshot.ts", "save", snapshotName], { cwd: root, env, stdio: "pipe" });
     const current = must("consultar captura", await cliente.get(endpoint), 200).expediente;
     const data = JSON.parse(current.data_json);
     data.contacto = { nombre: "Contacto ficticio", correo: "contacto@example.invalid", telefono: "5550000000" };
@@ -112,7 +266,10 @@ try {
     must("completar firma presencial", await gestor.post(`${endpoint}/gates`, { action: "event", eventType: "firma_presencial", eventDate: "2026-11-27", description, lugar, firmantes, documentId: firma.documentId }), 201);
     must("cerrar G2", await close(gestor, endpoint, "G2"), 200);
   }
-  await prepararG3(E);
+  await prepararG3(E, "antes-gate-2");
+  await captureScreenshot(gestor, "/gestor", "12-revision-flujo-firma.png", { selectFolio: expediente.folio, selectGate: "G2", scrollToText: "Firma presencial y escaneos" });
+  await captureScreenshot(cliente, "/portal/formatos", "08-formatos-cfe-vista-previa.png");
+  execFileSync(process.execPath, [tsx, "scripts/demo-snapshot.ts", "save", "antes-gate-4"], { cwd: root, env, stdio: "pipe" });
   const early = await evidence(E, "ingreso_acuse", { medio: "ventanilla", solicitudNumero: "SOL-001" });
   ok("acuse sin R10 y R11 → 409", early.status === 409 && /R10/.test(early.json.error) && /R11/.test(early.json.error), early.json.error);
   for (const code of ["R10", "R11"]) {
@@ -120,6 +277,7 @@ try {
     must(`validar ${code}`, await otro.post(`${E}/requirements/${code}`, { action: "validate" }), 200);
   }
   const acuse = must("registrar acuse", await evidence(E, "ingreso_acuse", { medio: "ventanilla", solicitudNumero: "SOL-001" }), 201).document;
+  await captureScreenshot(gestor, "/gestor", "13-revision-acuse-cfe.png", { selectFolio: expediente.folio, selectGate: "G3", scrollToText: "Gates del trámite · haz clic en uno para ver qué exige" });
   const db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"), { readOnly: true });
   const workflows = db.prepare("SELECT workflow_status FROM expediente_requirements WHERE expediente_id = ? AND requirement_code IN ('R01', 'R07')").all(expediente.id);
   const acuseStatus = db.prepare("SELECT status FROM documents WHERE id = ?").get(acuse.documentId);
@@ -132,6 +290,8 @@ try {
   const resolution = (await gestor.get(E)).json.expediente.external_events.find((item) => item.event_type === "resolucion_cfe");
   ok("oficio conserva resultado, fecha límite y documento de subgate", resolution?.resultado === "condicionado" && resolution.vence_at?.startsWith("2027-01-27") && !!resolution.subgate_document_id);
   must("cerrar G4", await close(gestor, E, "G4"), 200);
+  await captureScreenshot(cliente, "/portal", "07-portal-avance-gate-5.png");
+  await captureScreenshot(gestor, "/gestor", "14-revision-oficio-vigencia.png", { selectFolio: expediente.folio, selectGate: "G4", scrollToText: "Revisión del expediente" });
   must("registrar contrato", await evidence(E, "contrato"), 201);
   must("cerrar G5", await close(gestor, E, "G5"), 200);
   for (const code of ["U12", "U13", "U17"]) must(`validar ${code}`, await otro.post(`${E}/requirements/${code}`, { action: "validate" }), 200);
@@ -141,12 +301,14 @@ try {
   }
   for (const tipo of ["uiie", "certificado_uiie"]) must(`registrar ${tipo}`, await evidence(E, tipo), 201);
   must("cerrar G6", await close(gestor, E, "G6"), 200);
+  await captureScreenshot(gestor, "/gestor", "15-revision-inspeccion-uiie.png", { selectFolio: expediente.folio, selectGate: "G6", scrollToText: "Gates del trámite · haz clic en uno para ver qué exige" });
   for (const tipo of ["medidor", "interconexion", "alta_comercial"]) must(`registrar ${tipo}`, await evidence(E, tipo), 201);
   must("registrar cierre", await gestor.post(`${E}/gates`, { action: "event", eventType: "cierre", description: "Cierre revisado" }), 201);
   const own = await close(gestor, E, "G7");
   ok("responsable no cierra G7 → 409", own.status === 409 && /distinto del responsable/.test(own.json.error), own.json.error);
   must("otro gestor cierra G7", await close(otro, E, "G7"), 200);
   const final = must("consultar expediente cerrado", await gestor.get(E), 200).expediente;
+  await captureScreenshot(gestor, "/gestor", "16-revision-cierre-gate-8.png", { selectFolio: expediente.folio, selectGate: "G7", scrollToText: "Gates del trámite · haz clic en uno para ver qué exige" });
   ok("expediente cerrado", final.status === "cerrado" && final.gates.every((gate) => gate.status === "cerrado"));
   for (const type of ["firma_presencial", ...Object.keys(labels), "cierre"]) ok(`un solo evento ${type}`, final.external_events.filter((event) => event.event_type === type).length === 1);
 
@@ -159,12 +321,16 @@ try {
     must(`validar ${code} del reproceso`, await otro.post(`${R}/requirements/${code}`, { action: "validate" }), 200);
   }
   must("registrar acuse antes del reproceso", await evidence(R, "ingreso_acuse", { medio: "portal", solicitudNumero: "SOL-REPROCESO" }), 201);
+  execFileSync(process.execPath, [tsx, "scripts/demo-snapshot.ts", "save", "antes-reproceso"], { cwd: root, env, stdio: "pipe" });
   const action = { action: "event", eventType: "cfe_incompleto", description: "Faltan datos informados por CFE" };
   ok("reproceso sin códigos → 400", (await gestor.post(`${R}/gates`, action)).status === 400);
   ok("reproceso sin feedback → 400", (await gestor.post(`${R}/gates`, { ...action, requirementCodes: ["R09"], feedback: {} })).status === 400);
   ok("reproceso rechaza códigos inválidos y duplicados", (await gestor.post(`${R}/gates`, { ...action, requirementCodes: ["U01"], feedback: { U01: "No válido" } })).status === 400 && (await gestor.post(`${R}/gates`, { ...action, requirementCodes: ["R09", "R09"], feedback: { R09: "Duplicado" } })).status === 400);
   must("registrar CFE incompleto", await gestor.post(`${R}/gates`, { ...action, requirementCodes: ["R09", "R03"], feedback: { R09: "Actualizar recibo", R03: "Corregir unifilar" }, internalNotes: { R03: "Nota interna confidencial" } }), 201);
   const reproceso = must("consultar reproceso", await gestor.get(R), 200).expediente;
+  await captureScreenshot(cliente, "/portal/formatos", "06-portal-documentos-observacion.png");
+  await captureScreenshot(gestor, "/gestor", "11-revision-validacion-requisitos.png", { selectFolio: newExp.folio, selectGate: "G1", scrollToText: "Revisión del expediente" });
+  await captureScreenshot(gestor, "/gestor", "22-reproceso-cfe-semaforo.png", { selectFolio: newExp.folio, selectGate: "G1", scrollToText: "Reproceso CFE" });
   ok("reproceso reabre G1 y bloquea G2–G7", reproceso.gates.find((gate) => gate.gate_code === "G1")?.status === "abierto" && reproceso.gates.filter((gate) => gate.gate_code >= "G2").every((gate) => gate.status === "bloqueado"));
   ok("solo R09 y R03 quedan observados", reproceso.requirements.filter((item) => /^R\d{2}$/.test(item.requirement_code)).length === 11 && reproceso.requirements.filter((item) => item.status === "observado").map((item) => item.requirement_code).join(",") === "R03,R09");
   ok("R01 y R07 conservan firmas y R02 su validación", ["R01", "R07"].every((code) => reproceso.requirements.find((item) => item.requirement_code === code)?.status === "escaneo_verificado_idc") && reproceso.requirements.find((item) => item.requirement_code === "R02")?.status === "validado_idc");
@@ -240,10 +406,32 @@ try {
   const updated = (await gestor.get(O)).json.expediente.external_events.filter((event) => event.event_type === "resolucion_cfe");
   const reused = (await gestor.get(`${O}/requirements/U01`)).json.requirements.find((item) => item.requirement_code === "U01");
   ok("cada oficio es un evento y se reutiliza el último", updated.length === 2 && updated.at(-1)?.document_id === favorable.documentId && reused?.document_id === favorable.documentId, `eventos=${updated.length}; último=${updated.at(-1)?.document_id}; esperado=${favorable.documentId}; reutilizado=${reused?.document_id}`);
+  await captureScreenshot(gestor, "/gestor", "09-gestor-inicio-indicadores.png");
+  await captureScreenshot(gestor, "/gestor/proyectos", "10-proyectos-alta-asignacion.png");
+  await captureScreenshot(cliente, "/portal", "20-portal-cliente-movil.png", { mobile: true });
+
+  if (process.env.CAPTURAS === "1") {
+    const admin = new Session();
+    must("login ficticio admin para capturas", await admin.post("/api/auth/login", {
+      email: "seguridad.demo@example.invalid",
+      password,
+    }), 200);
+    const setup = must("iniciar MFA ficticio para capturas", await admin.post("/api/auth/mfa", { action: "begin" }), 200);
+    must("activar MFA ficticio para capturas", await admin.post("/api/auth/mfa", { action: "confirm", code: totp(setup.secret) }), 200);
+    await captureScreenshot(admin, "/seguridad", "04-seguridad-mfa-sin-qr.png", { noQr: true });
+    await captureScreenshot(admin, "/admin/usuarios", "17-admin-cuentas.png");
+    await captureScreenshot(admin, "/admin/accesos", "18-admin-bitacora.png");
+    await captureScreenshot(admin, "/admin/integraciones", "19-admin-integraciones-zoho.png", { screenshotHeading: "Así se vería en Zoho Projects" });
+    await captureScreenshot(admin, "/admin", "21-admin-inicio-seguridad.png");
+    ok("npm run capturas produce las 22 imágenes solicitadas", captureCount === 22, `capturas=${captureCount}`);
+  }
 } finally {
+  await browser?.close();
   server?.kill();
   await new Promise((resolve) => setTimeout(resolve, 800));
   fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.rmSync(dataDirSnapshots, { recursive: true, force: true });
+  fs.rmSync(demoDocsDir, { recursive: true, force: true });
   console.log(`\nRESULTADO: ${pass} ✅ / ${fail} ❌`);
   if (failures.length) console.log(" - " + failures.join("\n - "));
   if (fail) process.exitCode = 1;

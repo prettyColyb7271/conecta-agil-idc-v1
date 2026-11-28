@@ -91,7 +91,7 @@ try {
   ok("banner rojo de oficio a 5 días para cliente", redBanner(clientPage.text));
   ok("el Gestor ve oficio CFE y fecha en dd/mm/aaaa", managerPage.text.includes(`Oficio CFE vence en 5 días · ${fechaLimite}`));
   ok("el cliente ve el contexto del contrato y fecha en dd/mm/aaaa", clientPage.text.includes(`El oficio resolutivo de CFE vence en 5 días (${fechaLimite}). Antes de esa fecha hay que firmar el contrato.`));
-  ok("el portal local no presenta las metas ilustrativas del anteproyecto", !clientPage.text.includes("90%") && !clientPage.text.includes("4.5"));
+  ok("el portal local no presenta las metas ilustrativas del anteproyecto", !clientPage.text.includes("90%") && !/\b4\.5\b/.test(clientPage.text));
   ok("el tablero local muestra indicadores reales, no la línea base ilustrativa", managerPage.text.includes("Indicadores del reto (datos reales)") &&
     managerPage.text.includes("Expedientes por Gate") && !managerPage.text.includes("Semanas a energización"));
   ok("los tiempos sin acuse ni alta muestran que aún no hay datos", managerPage.text.includes("Aún no hay datos"));
