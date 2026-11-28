@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatoFecha } from "@/lib/fechas";
 import type { OutboxEntry, ZohoProjectPreview } from "@/lib/zoho/outbox";
 import { EmptyState, MessageBox, PageHeading, Panel, SmallButton, StatusBadge } from "@/components/ui";
 
@@ -31,10 +32,12 @@ const eventLabels: Record<string, string> = {
 
 function formatDate(value: string | null) {
   if (!value) return "—";
-  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
-  if (!year || !month || !day) return "—";
-  const parsed = new Date(year, month - 1, day);
-  return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat("es-MX", { dateStyle: "short" }).format(parsed);
+  try {
+    return formatoFecha(value);
+  } catch (error) {
+    if (error instanceof RangeError) return "—";
+    throw error;
+  }
 }
 
 function formatTime(value: string | null) {

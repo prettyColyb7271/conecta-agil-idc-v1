@@ -27,6 +27,7 @@ export type AdminDashboardData = {
 };
 
 const ROLES = Object.keys(ROLE_LABEL) as Role[];
+const DASHBOARD_ROLES = ROLES.filter((role) => role !== "gestor_tramites_cfe");
 const STATUS_LABELS = {
   activo: "Activas",
   bloqueado: "Bloqueadas",
@@ -100,7 +101,7 @@ export function getAdminDashboardData(): AdminDashboardData {
   }
   return {
     example: false,
-    roles: ROLES.map((role) => ({ role, label: ROLE_LABEL[role], count: roleMap.get(role) ?? 0 })),
+    roles: DASHBOARD_ROLES.map((role) => ({ role, label: ROLE_LABEL[role], count: roleMap.get(role) ?? 0 })),
     statuses: (Object.keys(STATUS_LABELS) as Array<keyof typeof STATUS_LABELS>).map((status) => ({
       status,
       label: STATUS_LABELS[status],
@@ -141,7 +142,6 @@ export function getDemoAdminDashboardData(): AdminDashboardData {
       { role: "admin_seguridad", label: ROLE_LABEL.admin_seguridad, count: 1 },
       { role: "coordinador_idc", label: ROLE_LABEL.coordinador_idc, count: 2 },
       { role: "cliente", label: ROLE_LABEL.cliente, count: 3 },
-      { role: "gestor_tramites_cfe", label: ROLE_LABEL.gestor_tramites_cfe, count: 0 },
     ],
     statuses: [
       { status: "activo", label: STATUS_LABELS.activo, count: 5 },
@@ -153,7 +153,7 @@ export function getDemoAdminDashboardData(): AdminDashboardData {
     mfa: {
       enabled: 1,
       requiredRoles: [{ role: "admin_seguridad", label: ROLE_LABEL.admin_seguridad }],
-      missingRequired: [{ name: "Administrador de ejemplo", role: ROLE_LABEL.admin_seguridad }],
+      missingRequired: [],
     },
     activity: { loginsOk: 8, loginsFailed: 1, blocks: 1, mfaFailed: 0, mfaDecryptFailed: 0, passwordLinks: 2 },
     integrations: { pending: 1, sent: 4, failed: 0, transport: "file" },

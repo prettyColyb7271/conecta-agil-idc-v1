@@ -373,7 +373,7 @@ try {
   const unreadableDashboard = must("A4e: GET Integraciones tolera payload inválido", await admin.get("/api/admin/integraciones"), 200);
   const unreadableEntry = unreadableDashboard.entries.find((entry) => entry.id === unreadableId);
   const unreadablePage = await admin.get("/admin/integraciones");
-  const expectedUnreadableDate = new Intl.DateTimeFormat("es-MX", { dateStyle: "short" }).format(new Date(2026, 10, 27));
+  const expectedUnreadableDate = "27/11/2026";
   const unreadablePageHasSafeRow = unreadablePage.status === 200 && unreadablePage.text.includes("Registro no legible") &&
     unreadablePage.text.includes("fallido") && unreadablePage.text.includes(expectedUnreadableDate) &&
     !unreadablePage.text.includes("invalid A4e payload SECRET") && !unreadablePage.text.includes("ERROR_PRIVADO_A4E");
