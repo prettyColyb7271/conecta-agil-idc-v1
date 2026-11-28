@@ -199,7 +199,13 @@ function lastKnownApiIds(expedienteId: string): string | null {
     WHERE expediente_id = ? AND zoho_id IS NOT NULL
     ORDER BY created_at DESC, rowid DESC
   `).all(expedienteId) as Array<{ zoho_id: string }>;
-  return rows.find((candidate) => Object.keys(safeIds(candidate.zoho_id).gates).length > 0)?.zoho_id ?? null;
+  const gates: Record<string, string> = {};
+  for (const candidate of rows) {
+    for (const [gate, id] of Object.entries(safeIds(candidate.zoho_id).gates)) {
+      if (!(gate in gates)) gates[gate] = id;
+    }
+  }
+  return Object.keys(gates).length > 0 ? JSON.stringify({ gates }) : null;
 }
 
 async function sendToApi(row: OutboxRow, snapshot: ZohoSnapshot): Promise<string> {
@@ -210,7 +216,10 @@ async function sendToApi(row: OutboxRow, snapshot: ZohoSnapshot): Promise<string
   const projectsApiRoot = process.env.ZOHO_PROJECTS_API_URL?.trim().replace(/\/+$/, "") || `https://projectsapi.zoho.${domain}`;
   const root = `${projectsApiRoot}/restapi/portal/${encodeURIComponent(portal)}/projects/${encodeURIComponent(project)}/tasks`;
   const previous = lastSuccessfulApiSnapshot(row.expediente_id);
-  const ids = safeIds(row.zoho_id ?? lastKnownApiIds(row.expediente_id) ?? previous?.zoho_id ?? null);
+  const ids = safeIds(lastKnownApiIds(row.expediente_id));
+  for (const [gate, id] of Object.entries(safeIds(row.zoho_id).gates)) {
+    if (!(gate in ids.gates)) ids.gates[gate] = id;
+  }
   const previousTasks = previous ? (JSON.parse(previous.payload_json) as ZohoSnapshot).tasks : [];
 
   for (const task of snapshot.tasks) {
@@ -239,12 +248,60 @@ function readRow(id: string): OutboxRow | undefined {
   `).get(id) as OutboxRow | undefined;
 }
 
-function pendingRows(expedienteId: string): Array<{ id: string }> {
+type OrderedOutboxRow = { id: string; created_at: string; rowid: number };
+type LatestOutboxRow = {
+  id: string;
+  status: OutboxRow["status"];
+  zoho_id: string | null;
+  last_attempt_at: string | null;
+  created_at: string;
+  rowid: number;
+};
+
+function pendingRows(expedienteId: string): OrderedOutboxRow[] {
   return getDatabase().prepare(`
-    SELECT id FROM outbox
+    SELECT id, created_at, rowid FROM outbox
     WHERE expediente_id = ? AND status = 'pendiente'
     ORDER BY created_at, rowid
-  `).all(expedienteId) as Array<{ id: string }>;
+  `).all(expedienteId) as OrderedOutboxRow[];
+}
+
+function consolidationTarget(zohoId: string | null): string | null {
+  if (!zohoId) return null;
+  try {
+    const parsed = JSON.parse(zohoId) as { consolidadoEn?: unknown };
+    return typeof parsed.consolidadoEn === "string" ? parsed.consolidadoEn : null;
+  } catch {
+    return null;
+  }
+}
+
+function latestNonConsolidatedRow(expedienteId: string): LatestOutboxRow | undefined {
+  const rows = getDatabase().prepare(`
+    SELECT id, status, zoho_id, last_attempt_at, created_at, rowid
+    FROM outbox WHERE expediente_id = ?
+    ORDER BY created_at DESC, rowid DESC
+  `).all(expedienteId) as LatestOutboxRow[];
+  return rows.find((row) => row.status !== "enviado" || !consolidationTarget(row.zoho_id));
+}
+
+function isOlder(row: OrderedOutboxRow, reference: Pick<LatestOutboxRow, "created_at" | "rowid">): boolean {
+  return row.created_at < reference.created_at || (row.created_at === reference.created_at && row.rowid < reference.rowid);
+}
+
+function isStaleSending(row: Pick<LatestOutboxRow, "status" | "last_attempt_at">): boolean {
+  return row.status === "enviando" && row.last_attempt_at !== null &&
+    Number.isFinite(Date.parse(row.last_attempt_at)) && Date.now() - Date.parse(row.last_attempt_at) > 120_000;
+}
+
+function consolidateRows(rows: OrderedOutboxRow[], targetId: string, lastAttemptAt: string | null): void {
+  const marker = JSON.stringify({ consolidadoEn: targetId });
+  const update = getDatabase().prepare(`
+    UPDATE outbox
+    SET status = 'enviado', last_error = NULL, last_attempt_at = ?, zoho_id = ?
+    WHERE id = ? AND status = 'pendiente'
+  `);
+  for (const row of rows) update.run(lastAttemptAt, marker, row.id);
 }
 
 async function deliver(id: string): Promise<OutboxRow> {
@@ -274,36 +331,48 @@ async function deliver(id: string): Promise<OutboxRow> {
   return row;
 }
 
-async function drainExpedienteQueue(expedienteId: string): Promise<void> {
+async function drainExpedienteQueue(expedienteId: string, allowRetryFailed = false): Promise<void> {
   while (true) {
     const pending = pendingRows(expedienteId);
     if (pending.length === 0) return;
 
     const transport = process.env.ZOHO_TRANSPORT?.trim().toLowerCase() || "file";
     if (transport !== "file" && transport !== "api") throw new Error("ZOHO_TRANSPORT debe ser file o api.");
-    const selected = transport === "api" ? pending.at(-1)! : pending[0];
-    const consolidated = transport === "api" ? pending.slice(0, -1) : [];
-    const result = await deliver(selected.id);
-
-    if (consolidated.length > 0) {
-      const marker = JSON.stringify({ consolidadoEn: selected.id });
-      const update = getDatabase().prepare(`
-        UPDATE outbox
-        SET status = 'enviado', last_error = NULL, last_attempt_at = ?, zoho_id = ?
-        WHERE id = ? AND status = 'pendiente'
-      `);
-      for (const row of consolidated) update.run(result.last_attempt_at, marker, row.id);
+    if (transport === "file") {
+      await deliver(pending[0].id);
+      continue;
     }
+
+    const latest = latestNonConsolidatedRow(expedienteId);
+    if (!latest) return;
+    if (latest.status === "enviado") {
+      consolidateRows(pending.filter((row) => isOlder(row, latest)), latest.id, latest.last_attempt_at);
+      continue;
+    }
+    if (latest.status === "enviando") {
+      if (!isStaleSending(latest)) return;
+      getDatabase().prepare("UPDATE outbox SET status = 'pendiente', last_error = NULL WHERE id = ?").run(latest.id);
+    } else if (latest.status === "fallido") {
+      if (!allowRetryFailed) return;
+      getDatabase().prepare("UPDATE outbox SET status = 'pendiente', last_error = NULL WHERE id = ?").run(latest.id);
+    }
+
+    const selected = readRow(latest.id);
+    if (!selected || selected.status !== "pendiente") continue;
+    const olderPending = pendingRows(expedienteId).filter((row) => isOlder(row, latest));
+    const result = await deliver(latest.id);
+    if (result.status !== "enviado") return;
+    consolidateRows(olderPending, latest.id, result.last_attempt_at);
   }
 }
 
-function queueExpedienteDelivery(expedienteId: string): Promise<void> {
+function queueExpedienteDelivery(expedienteId: string, allowRetryFailed = false): Promise<void> {
   const previous = deliveryQueues.get(expedienteId) ?? Promise.resolve();
   const next = previous
     .catch((error: unknown) => {
       console.error("Falló una cola previa de Zoho.", error);
     })
-    .then(() => drainExpedienteQueue(expedienteId));
+    .then(() => drainExpedienteQueue(expedienteId, allowRetryFailed));
   deliveryQueues.set(expedienteId, next);
   const clear = () => {
     if (deliveryQueues.get(expedienteId) === next) deliveryQueues.delete(expedienteId);
@@ -330,12 +399,11 @@ export async function retryZohoDelivery(id: string): Promise<OutboxRow> {
   const now = Date.now();
   const pendingIsStale = row.status === "pendiente" && Number.isFinite(Date.parse(row.created_at)) &&
     now - Date.parse(row.created_at) > 60_000;
-  const sendingIsStale = row.status === "enviando" && row.last_attempt_at !== null &&
-    Number.isFinite(Date.parse(row.last_attempt_at)) && now - Date.parse(row.last_attempt_at) > 120_000;
+  const sendingIsStale = isStaleSending(row);
   if (row.status === "enviando" && !sendingIsStale) throw new Error("OUTBOX_IN_PROGRESS");
   if (row.status === "pendiente" && !pendingIsStale) throw new Error("OUTBOX_IN_PROGRESS");
   getDatabase().prepare("UPDATE outbox SET status = 'pendiente', last_error = NULL WHERE id = ?").run(id);
-  await queueExpedienteDelivery(row.expediente_id);
+  await queueExpedienteDelivery(row.expediente_id, true);
   const result = readRow(id);
   if (!result) throw new Error("El envío de Zoho desapareció después de reintentarse.");
   return result;

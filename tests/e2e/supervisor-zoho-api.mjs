@@ -17,6 +17,7 @@ const state = {
   nextCreationResponse: null,
   reject401Once: false,
   reject429Once: false,
+  failAfterCreates: null,
   pausedProjectRequest: null,
   tasks: new Map(),
   requests: [],
@@ -123,6 +124,24 @@ function updateOutboxRow(id, status, lastAttemptAt, createdAt = null) {
   }
 }
 
+function insertOutboxRow(expedienteId, eventType, snapshot, status, zohoId, createdAt) {
+  const db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  const id = crypto.randomUUID();
+  try {
+    db.prepare(`
+      INSERT INTO outbox (id, event_type, expediente_id, payload_json, status, attempts, zoho_id, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    `).run(id, eventType, expedienteId, JSON.stringify(snapshot), status, zohoId, createdAt);
+  } finally {
+    db.close();
+  }
+  return id;
+}
+
+function consolidatedInto(row) {
+  try { return JSON.parse(row.zoho_id).consolidadoEn ?? null; } catch { return null; }
+}
+
 async function waitFor(predicate, message, timeout = 60_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -207,6 +226,15 @@ function snapshotTaskDescription(snapshot, task) {
   ].filter(Boolean).join("\n");
 }
 
+function simulatorMatchesSnapshot(folio, snapshot) {
+  const tasks = [...state.tasks.values()].filter((task) => task.folio === folio);
+  return tasks.length === 8 && snapshot.tasks.every((task) => {
+    const actual = tasks.find((item) => item.name === `${folio} - ${task.label}`);
+    const percent = task.status === "Cerrado" ? "100" : task.status === "Pendiente" ? "0" : "50";
+    return actual?.percentComplete === percent && actual.description === snapshotTaskDescription(snapshot, task);
+  });
+}
+
 function createSimulator() {
   return http.createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", simulatorBase);
@@ -261,9 +289,15 @@ function createSimulator() {
       return;
     }
 
+    if (state.failAfterCreates && state.failAfterCreates.created >= state.failAfterCreates.limit) {
+      state.failAfterCreates = null;
+      sendJson(response, 429, { error: "rate_limited_after_partial_create" });
+      return;
+    }
     const id = nextZohoId();
     state.tasks.set(id, { id, folio, name, description: fields.get("description"), percentComplete: fields.get("percent_complete") });
     state.requests.push({ kind: "create", taskId: id, folio, name });
+    if (state.failAfterCreates) state.failAfterCreates.created++;
     const responseMode = state.nextCreationResponse;
     state.nextCreationResponse = null;
     if (responseMode === "unsafe-number") {
@@ -352,6 +386,78 @@ try {
   const setup = must("iniciar MFA admin ficticio", await admin.post("/api/auth/mfa", { action: "begin" }), 200);
   must("confirmar MFA admin ficticio", await admin.post("/api/auth/mfa", { action: "confirm", code: totp(setup.secret) }), 200);
 
+  state.failAfterCreates = { limit: 3, created: 0 };
+  const partialFailure = await createExpediente(manager, sample, responsible.id);
+  await waitForExpediente(partialFailure.id, "fallido");
+  const partialRows = rowsForExpediente(partialFailure.id);
+  const partialA = partialRows[0];
+  const partialIds = JSON.parse(partialA.zoho_id).gates;
+  ok("A4d: A queda fallido tras crear solo los Gates 1–3", partialIds["1"] && partialIds["2"] && partialIds["3"] &&
+    !partialIds["4"] && Object.keys(partialIds).length === 3);
+
+  await uploadR06(client, partialFailure.id);
+  await waitFor(() => rowsForExpediente(partialFailure.id).at(-1)?.status === "enviado", "El envío B de A4d no terminó.");
+  const partialB = rowsForExpediente(partialFailure.id).at(-1);
+  const partialSnapshotB = JSON.parse(partialB.payload_json);
+  const partialRequestsBeforeRetry = state.requests.length;
+  must("A4d: Reintentar A después de enviar B", await admin.post("/api/admin/integraciones", { id: partialA.id }), 200);
+  const partialAfterRetry = rowsForExpediente(partialFailure.id);
+  const partialAfterA = partialAfterRetry.find((row) => row.id === partialA.id);
+  const partialAfterB = partialAfterRetry.find((row) => row.id === partialB.id);
+  ok("A4d: reintentar A no hace llamadas ni crea duplicados y conserva el estado de B", state.requests.length === partialRequestsBeforeRetry &&
+    simulatorMatchesSnapshot(partialFailure.folio, partialSnapshotB) &&
+    partialAfterA.status === "enviado" && consolidatedInto(partialAfterA) === partialB.id &&
+    partialAfterB.status === "enviado" && !consolidatedInto(partialAfterB));
+
+  state.reject429Once = true;
+  const noIdFailure = await createExpediente(manager, sample, responsible.id);
+  await waitForExpediente(noIdFailure.id, "fallido");
+  const noIdA = rowsForExpediente(noIdFailure.id)[0];
+  ok("A4d: A puede fallar sin haber guardado IDs", noIdA.zoho_id === null);
+  await uploadR06(client, noIdFailure.id);
+  await waitFor(() => rowsForExpediente(noIdFailure.id).at(-1)?.status === "enviado", "El envío B sin IDs previos no terminó.");
+  const noIdB = rowsForExpediente(noIdFailure.id).at(-1);
+  const noIdRequestsBeforeRetry = state.requests.length;
+  must("A4d: Reintentar A sin IDs después de enviar B", await admin.post("/api/admin/integraciones", { id: noIdA.id }), 200);
+  const noIdAfterRetry = rowsForExpediente(noIdFailure.id);
+  const noIdAfterA = noIdAfterRetry.find((row) => row.id === noIdA.id);
+  ok("A4d: A sin IDs no manda su snapshot viejo", state.requests.length === noIdRequestsBeforeRetry &&
+    simulatorMatchesSnapshot(noIdFailure.folio, JSON.parse(noIdB.payload_json)) &&
+    noIdAfterA.status === "enviado" && consolidatedInto(noIdAfterA) === noIdB.id);
+
+  const baselineRows = rowsForExpediente(primary.id);
+  const baselineSnapshot = JSON.parse(baselineRows.at(-1).payload_json);
+  const baselineIds = JSON.parse(baselineRows.at(-1).zoho_id);
+  const failedChoiceSnapshot = structuredClone(baselineSnapshot);
+  failedChoiceSnapshot.eventType = "requisito_validado";
+  const newestChoiceSnapshot = structuredClone(baselineSnapshot);
+  newestChoiceSnapshot.eventType = "requisito_validado";
+  newestChoiceSnapshot.tasks[1].responsible = "Responsable A4d ficticio";
+  const failedChoiceCreatedAt = new Date(Date.now() + 1_000).toISOString();
+  const newestChoiceCreatedAt = new Date(Date.now() + 2_000).toISOString();
+  const failedChoiceA = insertOutboxRow(primary.id, "requisito_validado", failedChoiceSnapshot, "fallido",
+    JSON.stringify(baselineIds), failedChoiceCreatedAt);
+  const newestChoiceB = insertOutboxRow(primary.id, "requisito_validado", newestChoiceSnapshot, "pendiente",
+    null, newestChoiceCreatedAt);
+  state.reject429Once = true;
+  const callsBeforeChoiceFailure = state.requests.length;
+  must("A4d: reintentar A procesa la fila B más nueva", await admin.post("/api/admin/integraciones", { id: failedChoiceA }), 200);
+  const afterChoiceFailure = rowsForExpediente(primary.id);
+  const choiceAAfterFailure = afterChoiceFailure.find((row) => row.id === failedChoiceA);
+  const choiceBAfterFailure = afterChoiceFailure.find((row) => row.id === newestChoiceB);
+  ok("A4d: si B falla con 429, A no se marca enviado ni consolidado", state.requests.length === callsBeforeChoiceFailure &&
+    choiceAAfterFailure.status === "pendiente" && !consolidatedInto(choiceAAfterFailure) &&
+    choiceBAfterFailure.status === "fallido");
+  const createsBeforeChoiceRetry = state.requests.filter((item) => item.kind === "create" && item.folio === primary.folio).length;
+  must("A4d: Reintentar B completa el snapshot más nuevo", await admin.post("/api/admin/integraciones", { id: newestChoiceB }), 200);
+  const afterChoiceRetry = rowsForExpediente(primary.id);
+  const choiceAAfterRetry = afterChoiceRetry.find((row) => row.id === failedChoiceA);
+  const choiceBAfterRetry = afterChoiceRetry.find((row) => row.id === newestChoiceB);
+  ok("A4d: al recuperarse B, A se consolida y no se duplican tareas", choiceAAfterRetry.status === "enviado" &&
+    consolidatedInto(choiceAAfterRetry) === newestChoiceB && choiceBAfterRetry.status === "enviado" &&
+    state.requests.filter((item) => item.kind === "create" && item.folio === primary.folio).length === createsBeforeChoiceRetry &&
+    simulatorMatchesSnapshot(primary.folio, newestChoiceSnapshot));
+
   const burst = await createExpediente(manager, sample, responsible.id);
   await waitForExpediente(burst.id, "enviado");
   const tokenCallsBeforeBurst = state.tokenCalls;
@@ -428,16 +534,16 @@ try {
   ok("el envío atascado termina enviado", rowsForExpediente(burst.id).at(-1).status === "enviado" &&
     rowsForExpediente(burst.id).at(-1).attempts === attemptsBeforeStaleRetry + 1);
 
-  const stalePendingRow = rowsForExpediente(burst.id).at(-1);
-  const originalCreatedAt = stalePendingRow.created_at;
+  const stalePendingExpediente = await createExpediente(manager, sample, responsible.id);
+  await waitForExpediente(stalePendingExpediente.id, "enviado");
+  const stalePendingRow = rowsForExpediente(stalePendingExpediente.id).at(-1);
   const oldCreatedAt = new Date(Date.now() - 2 * 60_000).toISOString();
   updateOutboxRow(stalePendingRow.id, "pendiente", null, oldCreatedAt);
   const stalePendingDashboard = must("consultar envío pendiente antiguo", await admin.get("/api/admin/integraciones"), 200);
   ok("Integraciones habilita Reintentar para un pendiente de más de un minuto", stalePendingDashboard.entries.find((entry) => entry.id === stalePendingRow.id)?.retryable === true);
   const attemptsBeforePendingRetry = stalePendingRow.attempts;
   must("Reintentar acepta un pendiente antiguo", await admin.post("/api/admin/integraciones", { id: stalePendingRow.id }), 200);
-  updateOutboxRow(stalePendingRow.id, "enviado", rowsForExpediente(burst.id).find((row) => row.id === stalePendingRow.id).last_attempt_at, originalCreatedAt);
-  const retriedPendingRow = rowsForExpediente(burst.id).find((row) => row.id === stalePendingRow.id);
+  const retriedPendingRow = rowsForExpediente(stalePendingExpediente.id).find((row) => row.id === stalePendingRow.id);
   ok("el pendiente antiguo termina enviado", retriedPendingRow.status === "enviado" && retriedPendingRow.attempts === attemptsBeforePendingRetry + 1);
 
   state.nextCreationResponse = "unsafe-number";
