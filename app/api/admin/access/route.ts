@@ -17,6 +17,7 @@ type AuditRow = {
   event_type: string;
   entity_type: string;
   metadata_json: string;
+  folio: string | null;
 };
 
 function attemptedEmail(metadataJson: string): string | null {
@@ -53,18 +54,21 @@ function safeEntityLabel(entity: string): string {
   return labels[entity] ?? "Otro";
 }
 
-function shapeRow(row: AuditRow) {
+function shapeRow(row: AuditRow, folioFilter: boolean) {
   const maskedEmail = attemptedEmail(row.metadata_json);
   const unrecognizedAccount = row.event_type === "login_fallido" && !row.display_name && maskedEmail !== null;
   return {
     id: row.id,
     createdAt: formatoFechaHora(row.created_at),
-    user: row.display_name ?? maskedEmail ?? "Sistema",
+    user: folioFilter
+      ? row.actor_role && row.actor_role in ROLE_LABEL ? ROLE_LABEL[row.actor_role] : "Sistema"
+      : row.display_name ?? maskedEmail ?? "Sistema",
     role: row.actor_role && row.actor_role in ROLE_LABEL ? ROLE_LABEL[row.actor_role] : "Sistema",
     event: unrecognizedAccount ? "Cuenta inexistente" : eventLabel(row.event_type),
     eventType: row.event_type,
     entity: safeEntityLabel(row.entity_type),
     metadata: sanitizeAuditMetadata(row.metadata_json),
+    ...(folioFilter ? { folio: row.folio } : {}),
   };
 }
 
@@ -75,10 +79,23 @@ function buildWhere(params: URLSearchParams) {
   const to = params.get("to")?.trim() ?? "";
   const userId = params.get("userId")?.trim() ?? "";
   const eventType = params.get("eventType")?.trim() ?? "";
+  const folio = params.get("folio")?.trim() ?? "";
+  const rawEventIds = params.get("eventIds")?.trim() ?? "";
   if ((from && !isValidDate(from)) || (to && !isValidDate(to))) {
     return { error: "Usa fechas válidas en formato AAAA-MM-DD." as const };
   }
   if (from && to && from > to) return { error: "La fecha inicial no puede ser posterior a la fecha final." as const };
+  if (folio && (folio.length > 64 || !/^[A-Za-z0-9._-]+$/.test(folio))) {
+    return { error: "El folio no tiene un formato válido." as const };
+  }
+  if (rawEventIds) {
+    const eventIds = rawEventIds.split(",");
+    if (eventIds.length > 100 || eventIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) {
+      return { error: "El filtro de eventos no es válido." as const };
+    }
+    conditions.push(`a.id IN (${eventIds.map(() => "?").join(", ")})`);
+    values.push(...eventIds);
+  }
   if (from) { conditions.push("a.created_at >= ?"); values.push(inicioDiaHermosillo(from)); }
   if (to) {
     const exclusiveEnd = new Date(`${to}T00:00:00.000Z`);
@@ -88,6 +105,7 @@ function buildWhere(params: URLSearchParams) {
   }
   if (userId) { conditions.push("a.actor_id = ?"); values.push(userId); }
   if (eventType) { conditions.push("a.event_type = ?"); values.push(eventType); }
+  if (folio) { conditions.push("e.folio = ?"); values.push(folio); }
   return { where: conditions.join(" AND "), values };
 }
 
@@ -103,34 +121,40 @@ export async function GET(request: Request) {
   if (mfaResponse) return mfaResponse;
 
   const params = new URL(request.url).searchParams;
+  const folioFilter = Boolean(params.get("folio")?.trim());
   const filter = buildWhere(params);
   if ("error" in filter) return NextResponse.json({ error: filter.error }, { status: 400 });
   const database = getDatabase();
   const count = database.prepare(`
     SELECT COUNT(*) AS total
     FROM audit_events a
+    LEFT JOIN expedientes e ON e.id = a.expediente_id
     WHERE ${filter.where}
   `).get(...filter.values) as { total: number };
   const total = Number(count.total);
   if (params.get("format") === "csv") {
     const rows = database.prepare(`
-      SELECT a.id, a.created_at, u.display_name, a.actor_role, a.event_type, a.entity_type, a.metadata_json
+      SELECT a.id, a.created_at, u.display_name, a.actor_role, a.event_type, a.entity_type, a.metadata_json, e.folio
       FROM audit_events a LEFT JOIN users u ON u.id = a.actor_id
+      LEFT JOIN expedientes e ON e.id = a.expediente_id
       WHERE ${filter.where}
       ORDER BY a.created_at DESC, a.id DESC
     `).all(...filter.values) as AuditRow[];
+    const headers = ["fecha_hora", "usuario", "rol", "evento", "entidad"];
+    if (folioFilter) headers.push("folio");
+    headers.push("metadatos_permitidos");
     const lines = [
-      ["fecha_hora", "usuario", "rol", "evento", "entidad", "metadatos_permitidos"].map(csvCell).join(","),
+      headers.map(csvCell).join(","),
       ...rows.map((row) => {
-        const shaped = shapeRow(row);
+        const shaped = shapeRow(row, folioFilter);
         const metadata = shaped.metadata.map((item: SafeMetadataItem) => `${item.label}: ${item.value}`).join("; ");
-        return [shaped.createdAt, shaped.user, shaped.role, shaped.event, shaped.entity, metadata].map(csvCell).join(",");
+        return [shaped.createdAt, shaped.user, shaped.role, shaped.event, shaped.entity, folioFilter ? row.folio : "", metadata].map(csvCell).join(",");
       }),
     ];
     return new Response(lines.join("\r\n"), {
       headers: {
         "content-type": "text/csv; charset=utf-8",
-        "content-disposition": 'attachment; filename="bitacora-accesos.csv"',
+        "content-disposition": 'attachment; filename="auditoria.csv"',
         "x-content-type-options": "nosniff",
       },
     });
@@ -143,20 +167,21 @@ export async function GET(request: Request) {
   const pages = Math.ceil(total / PAGE_SIZE);
   const page = Math.min(parsedPage, Math.max(1, pages));
   const rows = database.prepare(`
-    SELECT a.id, a.created_at, u.display_name, a.actor_role, a.event_type, a.entity_type, a.metadata_json
+    SELECT a.id, a.created_at, u.display_name, a.actor_role, a.event_type, a.entity_type, a.metadata_json, e.folio
     FROM audit_events a LEFT JOIN users u ON u.id = a.actor_id
+    LEFT JOIN expedientes e ON e.id = a.expediente_id
     WHERE ${filter.where}
     ORDER BY a.created_at DESC, a.id DESC
     LIMIT ? OFFSET ?
   `).all(...filter.values, PAGE_SIZE, (page - 1) * PAGE_SIZE) as AuditRow[];
-  const users = database.prepare(`
-    SELECT DISTINCT u.id, u.display_name, u.role
-    FROM audit_events a JOIN users u ON u.id = a.actor_id
-    ORDER BY u.display_name
-  `).all() as Array<{ id: string; display_name: string; role: Role }>;
+  const users = folioFilter ? [] : database.prepare(`
+      SELECT DISTINCT u.id, u.display_name, u.role
+      FROM audit_events a JOIN users u ON u.id = a.actor_id
+      ORDER BY u.display_name
+    `).all() as Array<{ id: string; display_name: string; role: Role }>;
   const eventTypes = database.prepare("SELECT DISTINCT event_type FROM audit_events ORDER BY event_type").all() as Array<{ event_type: string }>;
   return NextResponse.json({
-    events: rows.map(shapeRow),
+    events: rows.map((row) => shapeRow(row, folioFilter)),
     users: users.map((entry) => ({ id: entry.id, label: `${entry.display_name} · ${ROLE_LABEL[entry.role]}` })),
     eventTypes: eventTypes.map((entry) => ({ value: entry.event_type, label: eventLabel(entry.event_type) })),
     page,
