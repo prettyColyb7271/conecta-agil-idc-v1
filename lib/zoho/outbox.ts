@@ -40,6 +40,8 @@ export type OutboxEntry = {
   lastAttemptAt: string | null;
   createdAt: string;
   snapshot: ZohoSnapshot;
+  retryable: boolean;
+  consolidatedAt: string | null;
 };
 
 export type ZohoProjectPreview = {
@@ -233,15 +235,35 @@ function parseSnapshot(payload: string): ZohoSnapshot {
   };
 }
 
-function readEntries(): OutboxEntry[] {
+type OutboxEntryWithTarget = OutboxEntry & { consolidatedTargetId: string | null };
+
+function consolidationTarget(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as { consolidadoEn?: unknown };
+    return typeof parsed.consolidadoEn === "string" ? parsed.consolidadoEn : null;
+  } catch {
+    return null;
+  }
+}
+
+function canRetry(status: OutboxStatus, createdAt: string, lastAttemptAt: string | null, now: number): boolean {
+  if (status === "fallido") return true;
+  if (status === "pendiente") return Number.isFinite(Date.parse(createdAt)) && now - Date.parse(createdAt) > 60_000;
+  return status === "enviando" && lastAttemptAt !== null &&
+    Number.isFinite(Date.parse(lastAttemptAt)) && now - Date.parse(lastAttemptAt) > 120_000;
+}
+
+function readEntries(): OutboxEntryWithTarget[] {
   const rows = getDatabase().prepare(`
-    SELECT id, event_type, status, attempts, last_error, last_attempt_at, created_at, payload_json
+    SELECT id, event_type, status, attempts, last_error, last_attempt_at, created_at, payload_json, zoho_id
     FROM outbox ORDER BY created_at DESC, rowid DESC LIMIT 200
   `).all() as Array<{
     id: string; event_type: string; status: OutboxStatus; attempts: number;
-    last_error: string | null;     last_attempt_at: string | null;
-    created_at: string; payload_json: string;
+    last_error: string | null; last_attempt_at: string | null;
+    created_at: string; payload_json: string; zoho_id: string | null;
   }>;
+  const now = Date.now();
   return rows.map((row) => ({
     id: row.id,
     eventType: row.event_type,
@@ -251,13 +273,20 @@ function readEntries(): OutboxEntry[] {
     lastAttemptAt: row.last_attempt_at,
     createdAt: row.created_at,
     snapshot: parseSnapshot(row.payload_json),
+    retryable: canRetry(row.status, row.created_at, row.last_attempt_at, now),
+    consolidatedAt: null,
+    consolidatedTargetId: consolidationTarget(row.zoho_id),
   }));
 }
 
 export function getZohoDashboard() {
   const entries = readEntries();
+  const publicEntries: OutboxEntry[] = entries.map(({ consolidatedTargetId, ...entry }) => ({
+    ...entry,
+    consolidatedAt: consolidatedTargetId ? entry.lastAttemptAt : null,
+  }));
   const projectsByFolio = new Map<string, ZohoProjectPreview>();
-  for (const entry of entries) {
+  for (const entry of publicEntries) {
     if (!projectsByFolio.has(entry.snapshot.folio)) {
       projectsByFolio.set(entry.snapshot.folio, {
         folio: entry.snapshot.folio,
@@ -268,5 +297,5 @@ export function getZohoDashboard() {
   }
   const transport = process.env.ZOHO_TRANSPORT?.trim().toLowerCase() || "file";
   if (transport !== "file" && transport !== "api") throw new Error("ZOHO_TRANSPORT debe ser file o api.");
-  return { transport, entries, projects: [...projectsByFolio.values()] };
+  return { transport, entries: publicEntries, projects: [...projectsByFolio.values()] };
 }

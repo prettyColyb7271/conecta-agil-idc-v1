@@ -36,6 +36,14 @@ function formatDate(value: string | null) {
   return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat("es-MX", { dateStyle: "short" }).format(parsed);
 }
 
+function formatTime(value: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? null
+    : new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(parsed);
+}
+
 function statusStyle(status: OutboxEntry["status"]) {
   if (status === "enviado") return "bg-emerald-100 text-emerald-900";
   if (status === "fallido") return "bg-red-100 text-red-900";
@@ -104,10 +112,13 @@ export default function IntegrationsPanel({ transport, entries, projects }: {
                         <p className="font-semibold">{entry.snapshot.folio} · {eventLabels[entry.eventType] ?? "Actualización de expediente"}</p>
                         <p className="text-xs text-slate-600">Intentos: {entry.attempts} · {formatDate(entry.lastAttemptAt ?? entry.createdAt)}</p>
                         {entry.lastError && <p className="mt-1 text-xs text-red-800">{entry.lastError}</p>}
+                        {entry.consolidatedAt && (
+                          <p className="mt-1 text-xs text-slate-600">Consolidado en el envío de las {formatTime(entry.consolidatedAt)}</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusStyle(entry.status)}`}>{entry.status}</span>
-                        {entry.status === "fallido" && (
+                        {entry.retryable && (
                           <button
                             type="button"
                             onClick={() => void retry(entry.id)}

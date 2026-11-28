@@ -12,8 +12,12 @@ const base = `http://localhost:${appPort}`;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-zoho-api-"));
 const state = {
   tokenCalls: 0,
+  currentToken: "",
   nextId: 2750569000000118003n,
   nextCreationResponse: null,
+  reject401Once: false,
+  reject429Once: false,
+  pausedProjectRequest: null,
   tasks: new Map(),
   requests: [],
 };
@@ -101,9 +105,19 @@ function rowsForExpediente(expedienteId) {
   const db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"), { readOnly: true });
   try {
     return db.prepare(`
-      SELECT id, event_type, status, last_error, zoho_id, created_at
+      SELECT id, event_type, payload_json, status, attempts, last_error, last_attempt_at, zoho_id, created_at
       FROM outbox WHERE expediente_id = ? ORDER BY created_at, rowid
     `).all(expedienteId);
+  } finally {
+    db.close();
+  }
+}
+
+function updateOutboxRow(id, status, lastAttemptAt, createdAt = null) {
+  const db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  try {
+    db.prepare("UPDATE outbox SET status = ?, last_attempt_at = ?, created_at = COALESCE(?, created_at) WHERE id = ?")
+      .run(status, lastAttemptAt, createdAt, id);
   } finally {
     db.close();
   }
@@ -172,17 +186,59 @@ function sendJson(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+function pauseNextProjectRequest() {
+  let markStarted;
+  let release;
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  const released = new Promise((resolve) => { release = resolve; });
+  state.pausedProjectRequest = { markStarted, released };
+  return { started, release };
+}
+
+function snapshotTaskDescription(snapshot, task) {
+  const subtasks = task.subtasks.map((item) => `${item.label}: ${item.status}${item.date ? ` (${item.date})` : ""}`).join("\n");
+  return [
+    `Folio: ${snapshot.folio}`,
+    `Estado: ${task.status}`,
+    `Responsable: ${task.responsible}`,
+    task.openedAt ? `Registro: ${task.openedAt}` : "",
+    task.closedAt ? `Cierre: ${task.closedAt}` : "",
+    subtasks,
+  ].filter(Boolean).join("\n");
+}
+
 function createSimulator() {
   return http.createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", simulatorBase);
     if (request.method === "POST" && url.pathname === "/oauth/v2/token") {
       state.tokenCalls++;
-      sendJson(response, 200, { access_token: "tok-ficticio-a4", expires_in: 3600 });
+      state.currentToken = `tok-ficticio-a4-${state.tokenCalls}`;
+      sendJson(response, 200, { access_token: state.currentToken, expires_in: 3600 });
       return;
     }
     const taskMatch = url.pathname.match(/\/tasks(?:\/([^/]+))?\/?$/);
-    if (request.method !== "POST" || !taskMatch || request.headers.authorization !== "Bearer tok-ficticio-a4") {
+    if (request.method !== "POST" || !taskMatch) {
       sendJson(response, 404, { error: "simulator_route_not_found" });
+      return;
+    }
+    if (state.pausedProjectRequest) {
+      const gate = state.pausedProjectRequest;
+      state.pausedProjectRequest = null;
+      gate.markStarted();
+      await gate.released;
+    }
+    if (state.reject401Once) {
+      state.reject401Once = false;
+      sendJson(response, 401, { error: "unauthorized_once" });
+      return;
+    }
+    if (request.headers.authorization !== `Bearer ${state.currentToken}`) {
+      sendJson(response, 401, { error: "unauthorized" });
+      return;
+    }
+    if (state.reject429Once) {
+      state.reject429Once = false;
+      sendJson(response, 429, { error: "rate_limited_once" });
       return;
     }
 
@@ -287,10 +343,102 @@ try {
   await waitForExpediente(primary.id, "enviado");
   const updateRequests = state.requests.slice(requestsBeforeUpdate).filter((item) => item.kind === "update" && item.folio === primary.folio);
   const secondRows = rowsForExpediente(primary.id);
-  ok("el segundo envío actualiza usando el ID exacto y no crea tareas duplicadas", updateRequests.length === 8 &&
-    updateRequests.every((item) => Object.values(firstIds).includes(item.taskId)) &&
+  ok("el segundo envío actualiza solo Gate 2 con el ID exacto", updateRequests.length === 1 &&
+    updateRequests[0].taskId === firstIds["2"] &&
     state.requests.filter((item) => item.kind === "create" && item.folio === primary.folio).length === 8 &&
     JSON.parse(secondRows.at(-1).zoho_id).gates["1"] === firstIds["1"]);
+
+  admin = await login("seguridad.demo@example.invalid", seeded.password);
+  const setup = must("iniciar MFA admin ficticio", await admin.post("/api/auth/mfa", { action: "begin" }), 200);
+  must("confirmar MFA admin ficticio", await admin.post("/api/auth/mfa", { action: "confirm", code: totp(setup.secret) }), 200);
+
+  const burst = await createExpediente(manager, sample, responsible.id);
+  await waitForExpediente(burst.id, "enviado");
+  const tokenCallsBeforeBurst = state.tokenCalls;
+  const heldRequest = pauseNextProjectRequest();
+  await uploadR06(client, burst.id);
+  await heldRequest.started;
+  let validationResponses;
+  try {
+    validationResponses = await Promise.all(Array.from({ length: 11 }, () =>
+      manager.post(`/api/expedientes/${burst.id}/requirements/R06`, { action: "validate" })));
+  } finally {
+    heldRequest.release();
+  }
+  ok("la ráfaga de 11 validaciones se acepta", validationResponses.every((response) => response.status === 200));
+  await waitForExpediente(burst.id, "enviado");
+  const burstRows = rowsForExpediente(burst.id);
+  const burstSnapshot = JSON.parse(burstRows.at(-1).payload_json);
+  const burstTasks = [...state.tasks.values()].filter((task) => task.folio === burst.folio);
+  const burstCreates = state.requests.filter((item) => item.kind === "create" && item.folio === burst.folio);
+  ok("la ráfaga crea exactamente 8 tareas y no pide más de un token", burstCreates.length === 8 &&
+    state.tokenCalls - tokenCallsBeforeBurst <= 1,
+  JSON.stringify({ creates: burstCreates.length, tokens: state.tokenCalls - tokenCallsBeforeBurst }));
+  ok("Zoho conserva el estado exacto del snapshot final de la ráfaga", burstTasks.length === 8 &&
+    burstSnapshot.tasks.every((task) => {
+      const actual = burstTasks.find((item) => item.name === `${burst.folio} - ${task.label}`);
+      const percent = task.status === "Cerrado" ? "100" : task.status === "Pendiente" ? "0" : "50";
+      return actual?.percentComplete === percent && actual.description === snapshotTaskDescription(burstSnapshot, task);
+    }));
+
+  const validations = burstRows.filter((row) => row.event_type === "requisito_validado");
+  const consolidatedRows = validations.filter((row) => {
+    try { return Boolean(JSON.parse(row.zoho_id).consolidadoEn); } catch { return false; }
+  });
+  const dashboard = must("consultar consolidaciones de Zoho", await admin.get("/api/admin/integraciones"), 200);
+  const consolidatedEntry = dashboard.entries.find((entry) => entry.id === consolidatedRows[0]?.id);
+  const integrationsPage = await admin.get("/admin/integraciones");
+  ok("los envíos consolidados son visibles en Integraciones", validations.length === 11 && consolidatedRows.length > 0 &&
+    consolidatedRows.every((row) => row.status === "enviado" && row.last_error === null) &&
+    Boolean(consolidatedEntry?.consolidatedAt) && integrationsPage.status === 200 &&
+    integrationsPage.text.includes("Consolidado en el envío de las"));
+
+  const beforeSingleUpdate = state.requests.length;
+  await manager.post(`/api/expedientes/${burst.id}/requirements/R06`, { action: "validate" });
+  await waitForExpediente(burst.id, "enviado");
+  const singleUpdates = state.requests.slice(beforeSingleUpdate).filter((item) => item.kind === "update" && item.folio === burst.folio);
+  ok("un evento que solo cambia Gate 2 produce como máximo una actualización", singleUpdates.length <= 1 &&
+    singleUpdates.every((item) => item.name.endsWith("Gate 2")));
+
+  const before401Tokens = state.tokenCalls;
+  state.reject401Once = true;
+  await manager.post(`/api/expedientes/${burst.id}/requirements/R06`, { action: "validate" });
+  await waitForExpediente(burst.id, "enviado");
+  ok("HTTP 401 renueva el token una vez y completa el envío", state.tokenCalls === before401Tokens + 1 &&
+    rowsForExpediente(burst.id).at(-1).status === "enviado");
+
+  state.reject429Once = true;
+  await manager.post(`/api/expedientes/${burst.id}/requirements/R06`, { action: "validate" });
+  await waitFor(() => rowsForExpediente(burst.id).at(-1)?.status === "fallido", "El envío con límite 429 no quedó fallido.");
+  const rateLimitedRow = rowsForExpediente(burst.id).at(-1);
+  ok("HTTP 429 deja un error claro y permite Reintentar", rateLimitedRow.last_error === "Zoho limitó las peticiones; usa Reintentar en unos minutos.");
+  const createsBeforeRetry = state.requests.filter((item) => item.kind === "create" && item.folio === burst.folio).length;
+  must("Reintentar recupera el 429", await admin.post("/api/admin/integraciones", { id: rateLimitedRow.id }), 200);
+  await waitForExpediente(burst.id, "enviado");
+  ok("Reintentar tras 429 no duplica tareas", state.requests.filter((item) => item.kind === "create" && item.folio === burst.folio).length === createsBeforeRetry &&
+    rowsForExpediente(burst.id).at(-1).status === "enviado");
+
+  const staleRow = rowsForExpediente(burst.id).at(-1);
+  const oldAttempt = new Date(Date.now() - 3 * 60_000).toISOString();
+  updateOutboxRow(staleRow.id, "enviando", oldAttempt);
+  const staleSendingDashboard = must("consultar envío atascado", await admin.get("/api/admin/integraciones"), 200);
+  ok("Integraciones habilita Reintentar para un envío atascado", staleSendingDashboard.entries.find((entry) => entry.id === staleRow.id)?.retryable === true);
+  const attemptsBeforeStaleRetry = staleRow.attempts;
+  must("Reintentar acepta un envío atascado", await admin.post("/api/admin/integraciones", { id: staleRow.id }), 200);
+  ok("el envío atascado termina enviado", rowsForExpediente(burst.id).at(-1).status === "enviado" &&
+    rowsForExpediente(burst.id).at(-1).attempts === attemptsBeforeStaleRetry + 1);
+
+  const stalePendingRow = rowsForExpediente(burst.id).at(-1);
+  const originalCreatedAt = stalePendingRow.created_at;
+  const oldCreatedAt = new Date(Date.now() - 2 * 60_000).toISOString();
+  updateOutboxRow(stalePendingRow.id, "pendiente", null, oldCreatedAt);
+  const stalePendingDashboard = must("consultar envío pendiente antiguo", await admin.get("/api/admin/integraciones"), 200);
+  ok("Integraciones habilita Reintentar para un pendiente de más de un minuto", stalePendingDashboard.entries.find((entry) => entry.id === stalePendingRow.id)?.retryable === true);
+  const attemptsBeforePendingRetry = stalePendingRow.attempts;
+  must("Reintentar acepta un pendiente antiguo", await admin.post("/api/admin/integraciones", { id: stalePendingRow.id }), 200);
+  updateOutboxRow(stalePendingRow.id, "enviado", rowsForExpediente(burst.id).find((row) => row.id === stalePendingRow.id).last_attempt_at, originalCreatedAt);
+  const retriedPendingRow = rowsForExpediente(burst.id).find((row) => row.id === stalePendingRow.id);
+  ok("el pendiente antiguo termina enviado", retriedPendingRow.status === "enviado" && retriedPendingRow.attempts === attemptsBeforePendingRetry + 1);
 
   state.nextCreationResponse = "unsafe-number";
   const invalidIdExpediente = await createExpediente(manager, sample, responsible.id);
@@ -298,9 +446,6 @@ try {
   const failedRow = rowsForExpediente(invalidIdExpediente.id)[0];
   ok("ID numérico inseguro sin id_string deja el envío fallido con error claro", failedRow.last_error === "Zoho Projects no devolvió el identificador de una tarea.");
 
-  admin = await login("seguridad.demo@example.invalid", seeded.password);
-  const setup = must("iniciar MFA admin ficticio", await admin.post("/api/auth/mfa", { action: "begin" }), 200);
-  must("confirmar MFA admin ficticio", await admin.post("/api/auth/mfa", { action: "confirm", code: totp(setup.secret) }), 200);
   const retried = must("Reintentar recupera el envío con id_string", await admin.post("/api/admin/integraciones", { id: failedRow.id }), 200);
   await waitForExpediente(invalidIdExpediente.id, "enviado");
   ok("Reintentar completa la entrega y conserva IDs exactos", retried.status === "enviado" &&
