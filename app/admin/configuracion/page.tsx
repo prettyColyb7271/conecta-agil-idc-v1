@@ -50,7 +50,7 @@ export default async function ConfiguracionPage() {
             <dl className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
               <Item label="Modo" value={data.mode} />
               <Item label="Versión" value={data.version} />
-              <Item label="Schema version" value={data.schemaVersion ?? "No aplica"} />
+              <Item label="Versión del esquema de datos" value={data.schemaVersion ?? "No aplica"} />
               <Item label="Hora del servidor (Hermosillo)" value={data.serverTime} />
               <Item label="Ubicación de datos" value={data.storageLocation} />
               <Item label="Base de datos (SQLite)" value={formatBytes(data.databaseBytes)} />

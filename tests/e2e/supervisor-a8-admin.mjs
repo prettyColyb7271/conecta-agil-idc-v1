@@ -148,7 +148,7 @@ try {
   const anonymous = new Session();
   const requested = await anonymous.post("/api/auth/recovery", { email: clientEmail });
   const pending = await admin.session.get("/api/auth/recovery?status=pendiente");
-  const request = pending.json?.requests?.find((item) => item.email === "cl***@example.invalid");
+  const request = pending.json?.requests?.find((item) => item.email === "cl•••@e•••.invalid");
   ok("la solicitud aparece en la API con correo enmascarado y estado de cuenta", requested.status === 200 &&
     pending.status === 200 && request?.accountExists === true && request.role === "cliente" && request.accountStatus === "activo" &&
     !pending.text.includes(clientEmail));
@@ -178,7 +178,7 @@ try {
   await context.addCookies(Object.entries(admin.session.cookies).map(([name, value]) => ({ name, value, url: base })));
   page = await context.newPage();
   await page.goto(`${base}/admin/recuperacion`, { waitUntil: "domcontentloaded" });
-  await page.getByText("cl***@example.invalid", { exact: true }).waitFor({ state: "visible", timeout: 5000 });
+  await page.getByText("cl•••@e•••.invalid", { exact: true }).waitFor({ state: "visible", timeout: 5000 });
   await page.screenshot({ path: path.join(captureDir, "a8-recuperacion.png") });
   ok("la solicitud aparece renderizada en la pantalla de recuperación", (await page.locator("body").innerText()).includes("Cuenta existente"));
   await page.getByRole("button", { name: "Generar enlace de un solo uso" }).click();
@@ -198,7 +198,7 @@ try {
   const managerUsersPage = await manager.session.get("/gestor/usuarios");
   const managerRecoveryPage = await manager.session.get("/admin/recuperacion");
   ok("Gestor IDC también puede consultar solicitudes de clientes desde Usuarios", managerRequest.status === 200 &&
-    managerRecovery.status === 200 && managerRecovery.json?.requests.some((item) => item.email === "cl***@example.invalid") &&
+    managerRecovery.status === 200 && managerRecovery.json?.requests.some((item) => item.email === "cl•••@e•••.invalid") &&
     managerUsersPage.status === 200 && managerUsersPage.text.includes("Solicitudes de recuperación"));
   ok("Gestor IDC recibe 403 en la página de recuperación del admin", managerRecoveryPage.status === 403);
 
@@ -212,9 +212,10 @@ try {
     accountsApi.json?.summary?.mfaPending === 0 && roleMatrixText.includes("Gestor CFE (inactivo)") &&
     roleMatrixText.includes("no hay interruptores"));
   const search = page.getByLabel("Buscar por nombre o correo");
-  await search.fill(clientEmail);
-  await page.getByText(clientEmail, { exact: true }).waitFor({ state: "visible", timeout: 5000 });
-  ok("la búsqueda de Cuentas encuentra una persona por correo", (await page.locator("body").innerText()).includes(clientEmail));
+  await search.fill(client.display_name);
+  await page.getByText(client.display_name, { exact: true }).waitFor({ state: "visible", timeout: 5000 });
+  ok("la búsqueda de Cuentas encuentra una persona por nombre sin revelar su correo", (await page.locator("body").innerText()).includes("cl•••@e•••.invalid") &&
+    !(await page.locator("body").innerText()).includes(clientEmail));
 
   const configPage = await admin.session.get("/admin/configuracion");
   const configPageText = await configPage.text;
@@ -334,7 +335,7 @@ try {
   server?.kill();
   await new Promise((resolve) => setTimeout(resolve, 500));
   fs.rmSync(dataDir, { recursive: true, force: true });
-  console.log(`\nRESULTADO A8: ${pass} ✅ / ${fail} ❌`);
+  console.log(`\nRESULTADO: ${pass} ✅ / ${fail} ❌`);
   if (failures.length) console.log(" - " + failures.join("\n - "));
   if (fail) process.exitCode = 1;
 }

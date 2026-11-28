@@ -29,7 +29,7 @@ type UserSummary = { active: number; blocked: number; mfaPending: number };
 
 const ROLE_PERMISSIONS: Array<{ role: Role; can: string; cannot: string }> = [
   { role: "cliente", can: "Consultar sus expedientes, capturar datos y aportar documentos.", cannot: "Ver otros expedientes, comentarios internos ni validar requisitos." },
-  { role: "coordinador_idc", can: "Dar de alta expedientes, asignar gestores, atender registros y consultar métricas.", cannot: "Gestionar llaves, secretos o configuración de seguridad." },
+  { role: "coordinador_idc", can: "Revisar documentos, observar y validar requisitos, cerrar Gates según la separación de funciones, generar formatos, registrar eventos de CFE y atender la recuperación de clientes.", cannot: "Gestionar cuentas que no sean clientes, llaves, secretos ni configuración de seguridad; validar lo que él mismo subió cuando lo impide la regla de cuatro ojos." },
   { role: "admin_seguridad", can: "Administrar cuentas, sesiones, recuperación, MFA, auditoría e integraciones.", cannot: "Ver documentos de expedientes, fijar contraseñas o validar Gates." },
   { role: "gestor_tramites_cfe", can: "Rol histórico deshabilitado.", cannot: "No tiene acceso operativo." },
 ];
