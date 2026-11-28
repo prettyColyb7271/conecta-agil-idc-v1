@@ -7,11 +7,15 @@ export async function GET() {
   const passwordResponse = passwordChangeRequired(user);
   if (passwordResponse) return passwordResponse;
   if (!user) return Response.json({ error: "No autorizado." }, { status: 403 });
-  const notifications = getDatabase().prepare(`
+  const database = getDatabase();
+  const notifications = database.prepare(`
     SELECT id, expediente_id, type, priority, title, body, read_at, created_at
     FROM notifications WHERE user_id = ? ORDER BY created_at DESC
   `).all(user.id);
-  return Response.json({ notifications });
+  const pendingRecoveryCount = user.role === "admin_seguridad"
+    ? Number(database.prepare("SELECT COUNT(*) AS count FROM password_recovery_requests WHERE status = 'pendiente'").get()?.count ?? 0)
+    : 0;
+  return Response.json({ notifications, pendingRecoveryCount });
 }
 
 export async function PATCH(request: Request) {

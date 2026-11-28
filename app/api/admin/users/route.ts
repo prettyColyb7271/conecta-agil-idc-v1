@@ -24,7 +24,28 @@ export async function GET() {
             EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL) AS mfa_enabled
      FROM users u WHERE u.role != 'admin_seguridad' ORDER BY u.created_at`,
   ).all();
-  return NextResponse.json({ users });
+  const requiredRoles = ["admin_seguridad", ...(process.env.MFA_REQUIRED_ROLES ?? "")
+    .split(",")
+    .map((role) => role.trim())
+    .filter((role) => ["cliente", "coordinador_idc", "gestor_tramites_cfe"].includes(role))];
+  const placeholders = requiredRoles.map(() => "?").join(", ");
+  const summary = getDatabase().prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'activo' THEN 1 ELSE 0 END) AS active,
+      SUM(CASE WHEN status = 'bloqueado' THEN 1 ELSE 0 END) AS blocked,
+      SUM(CASE WHEN role IN (${placeholders}) AND NOT EXISTS (
+        SELECT 1 FROM user_mfa m WHERE m.user_id = users.id AND m.enabled_at IS NOT NULL
+      ) THEN 1 ELSE 0 END) AS mfa_pending
+    FROM users
+  `).get(...requiredRoles) as { active: number | null; blocked: number | null; mfa_pending: number | null };
+  return NextResponse.json({
+    users,
+    summary: {
+      active: Number(summary.active ?? 0),
+      blocked: Number(summary.blocked ?? 0),
+      mfaPending: Number(summary.mfa_pending ?? 0),
+    },
+  });
 }
 
 export async function POST(request: Request) {

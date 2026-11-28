@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Dot, EmptyState, MessageBox, PageHeading, Panel, SmallButton, StatusBadge } from "@/components/ui";
+import { Dot, EmptyState, MessageBox, MetricCard, PageHeading, Panel, SmallButton, StatusBadge } from "@/components/ui";
 import { EstadoUsuario, ROLE_LABEL, Role, usuariosIniciales } from "@/data/mock";
 import { formatoFechaHora } from "@/lib/fechas";
+import RecoveryPanel from "@/components/RecoveryPanel";
 
 const GRUPOS: { rol: Role; titulo: string }[] = [
   { rol: "cliente", titulo: "Clientes" },
@@ -24,10 +25,20 @@ type AdminUser = {
   mfa_enabled: number;
 };
 type RegistrationRequest = { id: string; email: string; display_name: string; requested_role: Role; created_at: string };
+type UserSummary = { active: number; blocked: number; mfaPending: number };
+
+const ROLE_PERMISSIONS: Array<{ role: Role; can: string; cannot: string }> = [
+  { role: "cliente", can: "Consultar sus expedientes, capturar datos y aportar documentos.", cannot: "Ver otros expedientes, comentarios internos ni validar requisitos." },
+  { role: "coordinador_idc", can: "Dar de alta expedientes, asignar gestores, atender registros y consultar métricas.", cannot: "Gestionar llaves, secretos o configuración de seguridad." },
+  { role: "admin_seguridad", can: "Administrar cuentas, sesiones, recuperación, MFA, auditoría e integraciones.", cannot: "Ver documentos de expedientes, fijar contraseñas o validar Gates." },
+  { role: "gestor_tramites_cfe", can: "Rol histórico deshabilitado.", cannot: "No tiene acceso operativo." },
+];
 
 export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; role: Role | null }) {
   const usuarios = mode === "demo" ? usuariosIniciales : [];
   const [localUsers, setLocalUsers] = useState<AdminUser[]>([]);
+  const [summary, setSummary] = useState<UserSummary | null>(null);
+  const [search, setSearch] = useState("");
   const [requests, setRequests] = useState<RegistrationRequest[]>([]);
   const [newManager, setNewManager] = useState({ displayName: "", email: "" });
   const [managerMessage, setManagerMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
@@ -46,9 +57,10 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
       try {
         const endpoint = role === "admin_seguridad" ? "/api/admin/users" : "/api/coordinator/requests";
         const response = await fetch(endpoint, { signal: controller.signal });
-        const data = await response.json() as { users?: AdminUser[]; requests?: RegistrationRequest[]; error?: string };
+        const data = await response.json() as { users?: AdminUser[]; requests?: RegistrationRequest[]; summary?: UserSummary; error?: string };
         if (!response.ok) throw new Error(data.error ?? "No se pudieron cargar las cuentas.");
         if (data.users) setLocalUsers(data.users);
+        if (data.summary) setSummary(data.summary);
         if (data.requests) setRequests(data.requests);
       } catch (cause) {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "No se pudieron cargar las cuentas.");
@@ -62,9 +74,10 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
 
   async function refreshUsers() {
     const response = await fetch("/api/admin/users");
-    const data = await response.json() as { users?: AdminUser[]; error?: string };
+    const data = await response.json() as { users?: AdminUser[]; summary?: UserSummary; error?: string };
     if (!response.ok || !data.users) throw new Error(data.error ?? "No se pudo actualizar la lista de cuentas.");
     setLocalUsers(data.users);
+    if (data.summary) setSummary(data.summary);
   }
 
   async function decide(requestId: string, action: "approve" | "reject") {
@@ -139,6 +152,7 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
     return (
       <div className="space-y-4">
         <PageHeading title="Solicitudes de registro" description="Revisa y responde las solicitudes pendientes." />
+        <RecoveryPanel mode={mode} showHeading={false} />
         {error && <MessageBox tone="error">{error}</MessageBox>}
         {success && <MessageBox tone="success">{success}</MessageBox>}
         <Panel title="Solicitudes de registro">
@@ -161,6 +175,10 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
   }
 
   if (isLocal && role === "admin_seguridad") {
+    const normalizedSearch = search.trim().toLocaleLowerCase("es-MX");
+    const filteredUsers = localUsers.filter((user) =>
+      `${user.display_name} ${user.email}`.toLocaleLowerCase("es-MX").includes(normalizedSearch),
+    );
     return (
       <div className="space-y-4">
         <PageHeading title="Cuentas" description="Administra usuarios, accesos, recuperación y MFA." />
@@ -168,6 +186,23 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
         {error && <MessageBox tone="error">{error}</MessageBox>}
         {success && <MessageBox tone="success">{success}</MessageBox>}
         {setupUrl && <MessageBox tone="warning">Enlace de un solo uso (vence en 24 horas): <span className="break-all font-semibold">{setupUrl}</span></MessageBox>}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <MetricCard label="Cuentas activas" value={summary?.active ?? "—"} />
+          <MetricCard label="Cuentas bloqueadas" value={summary?.blocked ?? "—"} />
+          <MetricCard label="MFA pendiente (roles obligatorios)" value={summary?.mfaPending ?? "—"} />
+        </div>
+        <Panel title="Roles y permisos">
+          <p className="mb-3 text-sm">Los permisos están definidos en el código y se aplican en el servidor. Esta matriz es de solo lectura; no hay interruptores.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {ROLE_PERMISSIONS.map((item) => (
+              <article key={item.role} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                <h3 className="font-bold">{ROLE_LABEL[item.role]}</h3>
+                <p className="mt-2"><strong>Puede:</strong> {item.can}</p>
+                <p className="mt-1"><strong>No puede:</strong> {item.cannot}</p>
+              </article>
+            ))}
+          </div>
+        </Panel>
         <Panel title="Alta de Gestor IDC">
           <form onSubmit={createManager} className="grid gap-3 rounded-lg bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="text-sm font-semibold">Nombre completo
@@ -181,9 +216,12 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
           </form>
         </Panel>
         <Panel title="Cuentas locales">
-          {loading ? <EmptyState>Cargando cuentas…</EmptyState> : localUsers.length ? (
+          <label className="mb-3 block max-w-lg text-sm font-semibold">Buscar por nombre o correo
+            <input value={search} onChange={(event) => setSearch(event.target.value)} className="mt-1 w-full rounded border bg-white p-2 font-normal" />
+          </label>
+          {loading ? <EmptyState>Cargando cuentas…</EmptyState> : filteredUsers.length ? (
             <ul className="space-y-2">
-              {localUsers.map((user) => (
+              {filteredUsers.map((user) => (
                 <li key={user.id} className="min-w-0 rounded-lg bg-white p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -209,7 +247,7 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
                 </li>
               ))}
             </ul>
-          ) : <EmptyState>No hay cuentas que mostrar.</EmptyState>}
+          ) : <EmptyState>{search ? "No hay cuentas que coincidan con la búsqueda." : "No hay cuentas que mostrar."}</EmptyState>}
         </Panel>
       </div>
     );

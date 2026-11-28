@@ -21,10 +21,13 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
   gestor_tramites_cfe: [],
   admin_seguridad: [
     { href: "/admin", label: "Inicio" },
-    { href: "/admin/integraciones", label: "Integraciones" },
     { href: "/admin/usuarios", label: "Cuentas" },
-    { href: "/admin/accesos", label: "Accesos" },
-    { href: "/seguridad", label: "Seguridad" },
+    { href: "/admin/recuperacion", label: "Recuperación de acceso" },
+    { href: "/admin/incidentes", label: "Seguridad e incidentes" },
+    { href: "/admin/accesos", label: "Auditoría" },
+    { href: "/admin/integraciones", label: "Integraciones" },
+    { href: "/admin/configuracion", label: "Configuración" },
+    { href: "/seguridad", label: "Seguridad de la cuenta" },
   ],
 };
 

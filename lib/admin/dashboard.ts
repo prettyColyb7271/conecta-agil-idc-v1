@@ -10,6 +10,7 @@ export type AdminDashboardData = {
   statuses: Array<{ status: "activo" | "bloqueado" | "pendiente"; label: string; count: number }>;
   pendingPasswords: number;
   pendingRegistrations: number;
+  pendingRecoveries: number;
   mfa: {
     enabled: number;
     requiredRoles: Array<{ role: Role; label: string }>;
@@ -52,6 +53,7 @@ export function getAdminDashboardData(): AdminDashboardData {
   const statusMap = new Map(statusCounts.map((row) => [row.status, Number(row.count)]));
   const pendingPasswords = Number(database.prepare("SELECT COUNT(*) AS count FROM users WHERE must_change_password = 1").get()?.count ?? 0);
   const pendingRegistrations = Number(database.prepare("SELECT COUNT(*) AS count FROM account_requests WHERE status = 'pendiente'").get()?.count ?? 0);
+  const pendingRecoveries = Number(database.prepare("SELECT COUNT(*) AS count FROM password_recovery_requests WHERE status = 'pendiente'").get()?.count ?? 0);
   const mfaEnabled = Number(database.prepare("SELECT COUNT(*) AS count FROM user_mfa WHERE enabled_at IS NOT NULL").get()?.count ?? 0);
   const required = requiredRoles();
   const placeholders = required.map(() => "?").join(", ");
@@ -117,6 +119,7 @@ export function getAdminDashboardData(): AdminDashboardData {
     })),
     pendingPasswords,
     pendingRegistrations,
+    pendingRecoveries,
     mfa: {
       enabled: mfaEnabled,
       requiredRoles: required.map((role) => ({ role, label: ROLE_LABEL[role] })),
@@ -163,6 +166,7 @@ export function getDemoAdminDashboardData(): AdminDashboardData {
     ],
     pendingPasswords: 1,
     pendingRegistrations: 1,
+    pendingRecoveries: 0,
     mfa: {
       enabled: 1,
       requiredRoles: [{ role: "admin_seguridad", label: ROLE_LABEL.admin_seguridad }],

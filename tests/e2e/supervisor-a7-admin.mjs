@@ -422,7 +422,7 @@ try {
   const securityPage = await adminLogin.session.get("/seguridad");
   ok("las cinco pantallas administrativas responden 200 al admin autenticado con MFA",
     [dashboard, accountsPage, accessPage, integrationsPage, securityPage].every((response) => response.status === 200) &&
-    accessPage.text.includes("Bitácora de accesos") &&
+    accessPage.text.includes("Auditoría") &&
     securityPage.text.includes("No proyectes esta pantalla") &&
     securityPage.text.includes("Cerrar Sesión") &&
     securityPage.text.includes('href="/admin"') &&

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { AdminDashboardData } from "@/lib/admin/dashboard";
-import { EmptyState, MetricCard, PageHeading, Panel, SmallButton, StatusBadge } from "@/components/ui";
+import { EmptyState, MessageBox, MetricCard, PageHeading, Panel, SmallButton, StatusBadge } from "@/components/ui";
 
 const QUICK_LINKS = [
   { href: "/admin/usuarios", label: "Cuentas" },
-  { href: "/admin/accesos", label: "Accesos" },
+  { href: "/admin/recuperacion", label: "Recuperación de acceso" },
+  { href: "/admin/accesos", label: "Auditoría" },
   { href: "/admin/integraciones", label: "Integraciones" },
   { href: "/seguridad", label: "Seguridad" },
 ];
@@ -27,6 +28,13 @@ export default function AdminInicio({ data }: { data: AdminDashboardData }) {
         description="Resumen de cuentas, MFA, actividad e integraciones. Solo se muestran metadatos."
         badge={data.example && <StatusBadge tone="info">Ejemplo</StatusBadge>}
       />
+      {data.pendingRecoveries > 0 && (
+        <MessageBox tone="warning">
+          <Link className="font-semibold underline" href="/admin/recuperacion">
+            {data.pendingRecoveries} {data.pendingRecoveries === 1 ? "solicitud de recuperación pendiente" : "solicitudes de recuperación pendientes"}
+          </Link>
+        </MessageBox>
+      )}
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <Panel title="Cuentas">

@@ -8,7 +8,7 @@ export type Estatus = "atrasado" | "riesgo" | "entiempo";
 
 export const ROLE_LABEL: Record<Role, string> = {
   cliente: "Cliente",
-  gestor_tramites_cfe: "Rol histórico inactivo",
+  gestor_tramites_cfe: "Gestor CFE (inactivo)",
   coordinador_idc: "Gestor IDC",
   admin_seguridad: "Administrador de seguridad",
 };

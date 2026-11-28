@@ -23,6 +23,10 @@ export function proxy(request: NextRequest) {
   }
   const required = requiredRoles.find(([prefix]) => request.nextUrl.pathname === prefix || request.nextUrl.pathname.startsWith(`${prefix}/`));
   const role = request.cookies.get("conecta-role")?.value;
+  const adminOnlyPages = ["/admin/recuperacion", "/admin/incidentes", "/admin/configuracion"];
+  if (adminOnlyPages.includes(request.nextUrl.pathname) && role && role !== "admin_seguridad") {
+    return new NextResponse("No autorizado.", { status: 403 });
+  }
   if (required && role && role !== required[1]) {
     return NextResponse.redirect(new URL(requiredRoles.find(([, candidate]) => candidate === role)?.[2] ?? "/", request.url));
   }
