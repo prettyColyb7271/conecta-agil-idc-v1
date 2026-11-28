@@ -16,8 +16,10 @@
     "db:reset": "tsx scripts/db-reset.ts",
     "formats:grid": "tsx scripts/generate-f01-grid.ts",
     "formats:samples": "tsx scripts/generate-format-samples.ts",
-    "formats:f01-template": "tsx scripts/generate-f01-managed-template.ts"
-    ,"plantillas:check": "tsx scripts/check-templates.ts"
+    "formats:f01-template": "tsx scripts/generate-f01-managed-template.ts",
+    "mfa:nueva-clave": "tsx scripts/mfa-new-key.ts",
+    "mfa:rotar-clave": "tsx scripts/mfa-rotate-key.ts",
+    "plantillas:check": "tsx scripts/check-templates.ts"
   },
   "dependencies": {
     "docxtemplater": "3.67.5",

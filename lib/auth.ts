@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
 import { getDatabase } from "@/lib/db/sqlite";
+import { decryptMfaSecretWithKey, encryptMfaSecretWithKey, parseMfaEncryptionKey } from "@/lib/mfa-crypto";
 import type { Role } from "@/data/mock";
 
 export const SESSION_COOKIE = "conecta-session";
@@ -52,10 +53,7 @@ export function verifyPassword(password: string, encoded: string): boolean {
 }
 
   function mfaEncryptionKey(): Buffer {
-    const raw = process.env.MFA_ENCRYPTION_KEY?.trim() ?? "";
-    const key = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
-    if (key.length !== 32) throw new Error("MFA_ENCRYPTION_KEY debe representar exactamente 32 bytes.");
-    return key;
+    return parseMfaEncryptionKey(process.env.MFA_ENCRYPTION_KEY, "MFA_ENCRYPTION_KEY");
   }
 
   function base32Encode(value: Buffer): string {
@@ -94,20 +92,16 @@ export function verifyPassword(password: string, encoded: string): boolean {
   }
 
   function encryptMfaSecret(secret: string) {
-    const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv("aes-256-gcm", mfaEncryptionKey(), iv);
-    const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+    const encrypted = encryptMfaSecretWithKey(secret, mfaEncryptionKey());
     return {
-      ciphertext: ciphertext.toString("base64"),
-      iv: iv.toString("base64"),
-      authTag: cipher.getAuthTag().toString("base64"),
+      ciphertext: encrypted.secret_ciphertext,
+      iv: encrypted.secret_iv,
+      authTag: encrypted.secret_auth_tag,
     };
   }
 
   function decryptMfaSecret(row: { secret_ciphertext: string; secret_iv: string; secret_auth_tag: string }): string {
-    const decipher = crypto.createDecipheriv("aes-256-gcm", mfaEncryptionKey(), Buffer.from(row.secret_iv, "base64"));
-    decipher.setAuthTag(Buffer.from(row.secret_auth_tag, "base64"));
-    return Buffer.concat([decipher.update(Buffer.from(row.secret_ciphertext, "base64")), decipher.final()]).toString("utf8");
+    return decryptMfaSecretWithKey(row, mfaEncryptionKey());
   }
 
   export function generateTotpSecret(): string {
@@ -183,8 +177,13 @@ export function verifyPassword(password: string, encoded: string): boolean {
   export function verifyUserMfa(userId: string, code: string): "totp" | "backup" | null {
     const row = getDatabase().prepare("SELECT secret_ciphertext, secret_iv, secret_auth_tag, last_used_step FROM user_mfa WHERE user_id = ? AND enabled_at IS NOT NULL").get(userId) as { secret_ciphertext: string; secret_iv: string; secret_auth_tag: string; last_used_step: number | null } | undefined;
     if (!row) return null;
-    const secret = decryptMfaSecret(row);
-    const step = verifyTotpCode(secret, code, row.last_used_step);
+    let secret: string | undefined;
+    try {
+      secret = decryptMfaSecret(row);
+    } catch {
+      auditEvent({ actorId: userId, eventType: "mfa_descifrado_fallido", entityType: "user_mfa", entityId: userId });
+    }
+    const step = secret === undefined ? null : verifyTotpCode(secret, code, row.last_used_step);
     if (step !== null) {
       getDatabase().prepare("UPDATE user_mfa SET last_used_step = ?, updated_at = ? WHERE user_id = ?").run(step, new Date().toISOString(), userId);
       return "totp";
