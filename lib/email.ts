@@ -20,7 +20,7 @@ function fromAddress(transport: string): string {
 
 async function sendToFile(message: EmailMessage): Promise<void> {
   const root = process.env.LOCAL_DATA_DIR?.trim() || path.join(process.cwd(), "local-data");
-  const outbox = path.join(root, "outbox");
+  const outbox = path.join(root, "outbox-email");
   await fs.mkdir(outbox, { recursive: true });
   const filename = `${new Date().toISOString().replaceAll(/[:.]/g, "-")}-${crypto.randomUUID()}.json`;
   await fs.writeFile(path.join(outbox, filename), JSON.stringify({

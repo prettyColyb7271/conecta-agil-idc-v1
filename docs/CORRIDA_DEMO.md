@@ -4,12 +4,15 @@ Guion de 15 minutos para mostrar el flujo ficticio G0→G7, el reproceso de CFE 
 
 ## Preparación segura
 
-1. Cierra cualquier servidor de demo anterior. En PowerShell, configura una carpeta temporal vacía, distinta de `%LOCALAPPDATA%\ConectaAgil` y fuera de OneDrive:
+1. Cierra cualquier servidor de demo anterior. En PowerShell, configura una carpeta temporal vacía, distinta de `%LOCALAPPDATA%\ConectaAgil` y fuera de OneDrive. Las variables del proceso prevalecen sobre `.env.local`; no abras ni imprimas ese archivo:
 
    ```powershell
    $env:APP_MODE = "local"
    $env:NEXT_PUBLIC_MODO = "local"
    $env:LOCAL_DATA_DIR = Join-Path $env:TEMP "ConectaAgil-demo"
+   $env:DEMO_DOCS_DIR = Join-Path $env:LOCAL_DATA_DIR "documents"
+   $env:PUBLIC_BASE_URL = "http://localhost:3140"
+   $env:MFA_REQUIRED_ROLES = "admin_seguridad,coordinador_idc"
    $env:ZOHO_TRANSPORT = "file"
    $env:ZOHO_CLIENT_ID = ""
    $env:ZOHO_CLIENT_SECRET = ""
@@ -17,21 +20,37 @@ Guion de 15 minutos para mostrar el flujo ficticio G0→G7, el reproceso de CFE 
    $env:ZOHO_PORTAL_ID = ""
    $env:ZOHO_PROJECT_ID = ""
    $env:EMAIL_TRANSPORT = "file"
+   $env:RESEND_API_KEY = ""
    ```
 
-2. Solo si la carpeta de demo está vacía:
+2. Solo si `LOCAL_DATA_DIR` está vacía, prepara la semilla, los documentos ficticios y los enlaces personales:
 
    ```powershell
    npm run demo:seed
    npm run demo:docs
+   npm run cuentas:demo
    npm run build
    npm run start:local
    ```
 
-   `demo:seed` crea `IDC-DEMO-0001`, la empresa ficticia de 45.5 kW y cuatro cuentas de prueba: cliente, dos Gestores IDC y admin. El comando aplica las migraciones, pero no inicializa ni modifica la base real. La contraseña de prueba no se imprime en consola ni en este guion. Abre `http://localhost:3140`.
+   `demo:seed` crea `IDC-DEMO-0001`, la empresa ficticia de 45.5 kW y cuatro cuentas de prueba: cliente, dos Gestores IDC y admin. `demo:docs` guarda los PDF en `LOCAL_DATA_DIR\documents`. `cuentas:demo` cambia cada contraseña sembrada por una aleatoria desconocida y crea enlaces individuales de un solo uso, válidos 72 horas. La consola solo muestra la ruta del archivo privado `LOCAL_DATA_DIR\CUENTAS_DEMO.local.md`; nunca copies sus enlaces a este guion, reportes, commits o capturas.
+3. Abre cada enlace desde el archivo privado en el perfil de navegador de la persona indicada. Cada quien define su propia contraseña y vincula OneAuth en **Mi seguridad**; es obligatorio para admin y Gestores, opcional para Cliente. La dueña puede usar perfiles separados para sus roles. Mantén dos Gestores distintos para la regla de cuatro ojos; quien sube un documento no debe validarlo ni cerrar su propio Gate.
+4. Después de definir las contraseñas y vincular OneAuth, detén `:3140` y guarda la base inicial:
 
-3. Usa cuatro perfiles separados del navegador: Cliente, Gestor 1 (`coordinador.demo@example.invalid`), Gestor 2 (`idc2.demo@example.invalid`) y admin (`seguridad.demo@example.invalid`). Inicia sesión en cada uno con las credenciales de demo aprobadas y completa MFA del admin antes de compartir pantalla. El tercer navegador de trabajo puede ser una ventana InPrivate.
-4. No leas ni proyectes `.env.local`. No muestres el QR de MFA, el secreto ni los códigos de respaldo.
+   ```powershell
+   npm run demo:snapshot -- save base-cuentas
+   ```
+
+   Cada ensayo comienza con el servidor detenido y restaura ese estado:
+
+   ```powershell
+   npm run demo:snapshot -- restore base-cuentas
+   npm run start:local
+   ```
+
+   El snapshot conserva las contraseñas y el MFA cifrado; al restaurarlo, OneAuth sigue funcionando con la misma `MFA_ENCRYPTION_KEY` y no hay que volver a vincular. Los enlaces no se copian al snapshot y el restore elimina el archivo `CUENTAS_DEMO.local.md`. Si se rota la clave MFA antes de crear cuentas reales, hay que volver a vincular OneAuth en la demo.
+
+5. Vincula OneAuth sin proyectar la pantalla: apaga la pantalla duplicada o mueve la ventana fuera de la proyección mientras se muestra el QR. Si el celular falla, usa uno de los códigos de respaldo y guárdalo fuera del repositorio.
 
 ### Puntos de recuperación
 
@@ -43,13 +62,38 @@ npm run demo:snapshot -- save antes-gate-4
 npm run demo:snapshot -- save antes-reproceso
 ```
 
-Los snapshots quedan en una carpeta hermana de `LOCAL_DATA_DIR`; contienen una copia consistente de SQLite y los archivos ficticios. Para restaurar, detén `:3140` y usa el mismo nombre:
+Los snapshots quedan en una carpeta hermana de `LOCAL_DATA_DIR`; contienen una copia consistente de SQLite, documentos ficticios y la carpeta de correo de demo. `CUENTAS_DEMO.local.md` se excluye porque contiene enlaces de un solo uso. Para restaurar, detén `:3140` y usa el mismo nombre:
 
 ```powershell
 npm run demo:snapshot -- restore antes-reproceso
 ```
 
-El comando se niega a operar si `LOCAL_DATA_DIR` coincide con la base real o está dentro de ella. No ejecutes `db:seed` ni `demo:seed` sobre la base real.
+El comando se niega a operar si `LOCAL_DATA_DIR` coincide con la base real, está dentro de ella o está en OneDrive. No ejecutes `db:seed` ni `demo:seed` sobre la base real.
+
+## Cuentas, correo y navegadores
+
+| Cuenta ficticia | Quién la usa | Uso en el ensayo | Perfil de navegador |
+|---|---|---|---|
+| Cliente (`cliente.demo@example.invalid`) | La dueña | Captura y consulta del expediente | Perfil Cliente, separado del admin |
+| Gestor 1 (`coordinador.demo@example.invalid`) | Un compañero del equipo | Revisión y carga de documentos | Perfil Gestor 1 |
+| Gestor 2 (`idc2.demo@example.invalid`) | Otra persona del equipo | Validación independiente y cierre de Gates | Perfil Gestor 2 |
+| Admin (`seguridad.demo@example.invalid`) | La dueña | Cuentas, auditoría y seguridad | Perfil Admin, separado del cliente |
+
+Cada perfil inicia sesión con la contraseña definida por su titular; el guion no guarda contraseñas. En la instancia local, los correos de registro y avisos se guardan en `LOCAL_DATA_DIR\outbox-email\`. Para la presentación puede mostrarse el mensaje de registro recibido, siempre que se mantenga el transporte `file`.
+
+La pantalla de registro de Vercel está en modo demo y debe mostrar **“Demo: no se envía correo”**; enviar el formulario allí no manda correo.
+
+### Prueba opcional de Resend (solo la dueña)
+
+Las pruebas automáticas y los ensayos nunca usan Resend. Si se desea verificar manualmente un único envío, usa la carpeta aislada de demo, deja Zoho en `file`, y reinicia el servidor así:
+
+```powershell
+$env:EMAIL_TRANSPORT = "resend"
+Remove-Item Env:RESEND_API_KEY -ErrorAction SilentlyContinue
+npm run start:local
+```
+
+No inspecciones ni imprimas `.env.local`; deja que Next.js cargue la clave protegida desde su configuración local. En el formulario de registro introduce únicamente el correo propio de la cuenta de Resend, sin ponerlo en el repositorio ni en capturas. Resend solo entregará a esa cuenta mientras el dominio no esté verificado. Después de recibir el mensaje, detén el servidor y vuelve a `EMAIL_TRANSPORT=file` y `RESEND_API_KEY=""` antes de continuar los ensayos.
 
 ## Guion cronometrado
 

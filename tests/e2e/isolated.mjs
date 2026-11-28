@@ -47,7 +47,7 @@ try {
     ZOHO_PROJECT_ID: "",
     ZOHO_DC: "com",
   };
-  const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209, 3210, 3211];
+  const ports = [Number(port), 3194, 3195, 3196, 3197, 3198, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209, 3210, 3211, 3212];
   if (!Number.isInteger(ports[0]) || ports[0] < 1 || ports[0] > 65535 || ports[0] === 3140 || new Set(ports).size !== ports.length) {
     throw new Error("ISOLATED_PORT debe ser un puerto libre distinto de 3140 y de los usados por las suites.");
   }
@@ -110,6 +110,7 @@ try {
     ["supervisor-a9-aviso", ["tests/e2e/supervisor-a9-aviso.mjs", root], false],
     ["supervisor-a8-admin", ["tests/e2e/supervisor-a8-admin.mjs", root], false],
     ["supervisor-a8b-recuperacion", ["tests/e2e/supervisor-a8b-recuperacion.mjs", root], false],
+    ["supervisor-a6-cuentas", ["tests/e2e/supervisor-a6-cuentas.mjs", root], false],
     ["supervisor-a7-admin", ["tests/e2e/supervisor-a7-admin.mjs", root], false],
     ["supervisor-a5-demo", ["tests/e2e/supervisor-a5-demo.mjs", root], false],
     ["supervisor-a5-zoho", ["tests/e2e/supervisor-a5-zoho.mjs", root], false],

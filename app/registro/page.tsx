@@ -60,6 +60,7 @@ export default function RegistroPage() {
     <AuthShell>
       <form onSubmit={onSubmit} className="w-full max-w-lg space-y-3">
         <h2 className="text-center text-4xl font-extrabold">{t.registerTitle}</h2>
+        {!LOCAL_MODE && <p className="rounded-md bg-amber-100 px-3 py-2 text-center text-xs font-semibold text-amber-900">Demo: no se envía correo.</p>}
         <div className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
           <label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
         </div>

@@ -8,14 +8,16 @@ import { connection } from "next/server";
 import { getAppMode } from "@/lib/adapters/config";
 import { getDatabase } from "@/lib/db/sqlite";
 import { decryptMfaSecretWithKey, encryptMfaSecretWithKey, parseMfaEncryptionKey } from "@/lib/mfa-crypto";
+import { hashToken } from "@/lib/password-setup";
 import type { Role } from "@/data/mock";
+
+export { createPasswordSetupToken, generateTemporaryPassword, hashPassword, hashToken, PASSWORD_SETUP_TOKEN_HOURS, verifyPassword } from "@/lib/password-setup";
 
 export const SESSION_COOKIE = "conecta-session";
 export const ROLE_COOKIE = "conecta-role";
 export const MUST_CHANGE_COOKIE = "conecta-must-change";
 export const MFA_CHALLENGE_COOKIE = "conecta-mfa-challenge";
 export const SESSION_HOURS = 8;
-export const PASSWORD_SETUP_TOKEN_HOURS = 24;
 
 export type AuthUser = {
   id: string;
@@ -33,24 +35,6 @@ const roleHome: Record<Role, string> = {
   gestor_tramites_cfe: "/gestor",
   admin_seguridad: "/admin",
 };
-
-export function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16);
-  const derived = crypto.scryptSync(password, salt, 64);
-  return `scrypt$${salt.toString("hex")}$${derived.toString("hex")}`;
-}
-
-export function verifyPassword(password: string, encoded: string): boolean {
-  const [algorithm, saltHex, hashHex] = encoded.split("$");
-  if (algorithm !== "scrypt" || !saltHex || !hashHex) return false;
-  try {
-    const expected = Buffer.from(hashHex, "hex");
-    const actual = crypto.scryptSync(password, Buffer.from(saltHex, "hex"), expected.length);
-    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-  } catch {
-    return false;
-  }
-}
 
   function mfaEncryptionKey(): Buffer {
     return parseMfaEncryptionKey(process.env.MFA_ENCRYPTION_KEY, "MFA_ENCRYPTION_KEY");
@@ -238,29 +222,9 @@ export function disableUserMfa(userId: string): void {
   database.prepare("DELETE FROM user_mfa WHERE user_id = ?").run(userId);
 }
 
-export function generateTemporaryPassword(): string {
-  return crypto.randomBytes(24).toString("base64url");
-}
-
 export function passwordChangeRequired(user: AuthUser | null): NextResponse | null {
   if (user?.mustChangePassword) return NextResponse.json({ error: "Debes cambiar tu contraseña" }, { status: 403 });
   return mfaRequiredResponse(user);
-}
-
-export function hashToken(token: string): string {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
-
-export function createPasswordSetupToken(userId: string, createdBy: string): { token: string; expiresAt: string } {
-  const token = crypto.randomBytes(32).toString("base64url");
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + PASSWORD_SETUP_TOKEN_HOURS * 60 * 60 * 1000).toISOString();
-  const database = getDatabase();
-  database.prepare("UPDATE password_setup_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL").run(now.toISOString(), userId);
-  database.prepare(
-    "INSERT INTO password_setup_tokens (id, user_id, token_hash, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(crypto.randomUUID(), userId, hashToken(token), expiresAt, createdBy, now.toISOString());
-  return { token, expiresAt };
 }
 
 export function assertSameOrigin(request: Request): void {

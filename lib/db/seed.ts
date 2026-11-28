@@ -1,9 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { DEMO_SEED_PASSWORD } from "@/lib/password-setup";
 import { getDatabase, migrateDatabase } from "./sqlite-runtime";
-
-const TEST_PASSWORD = "ConectaLocal-2026!";
 
 const requirementCatalog = [
   ["R01", "R", "Formato de solicitud para interconexión", "ESPECIFICACION §4.1, línea 60", "generado", "IDC/Cliente", "F-01", "solicitante o representante legal", 0, null, null, "Secciones I–VII completas; RPU; capacidad en kW; coordenadas UTM; firma"],
@@ -91,7 +90,7 @@ export function seedDatabase(): { users: number; requirements: number; expedient
   for (const [email, displayName, role] of users) {
     const existing = findUser.get(email);
     const id = existing ? String(existing.id) : crypto.randomUUID();
-    if (!existing) insertUser.run(id, email, displayName, role, hashPassword(TEST_PASSWORD), now, now);
+    if (!existing) insertUser.run(id, email, displayName, role, hashPassword(DEMO_SEED_PASSWORD), now, now);
     if (!userIds.has(role)) userIds.set(role, id);
     if (email === "idc2.demo@example.invalid") userIds.set("coordinador_idc_2", id);
   }
@@ -166,4 +165,4 @@ export function seedDatabase(): { users: number; requirements: number; expedient
   };
 }
 
-export { TEST_PASSWORD };
+export { DEMO_SEED_PASSWORD as TEST_PASSWORD };

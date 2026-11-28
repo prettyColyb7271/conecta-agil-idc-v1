@@ -372,8 +372,8 @@ try {
   ok("portal despliega R01–R11 en 11 filas y en orden", page.ok && requirementRows.length === 11 && requirementCodes.join(",") === "R01,R02,R03,R04,R05,R06,R07,R08,R09,R10,R11");
   ok("nota interna ausente en el panel completo del cliente", page.ok && Boolean(allRequirementsPanel) && !allRequirementsPanel.includes("Nota interna confidencial"));
   ok("cliente no puede subir R03", (await cliente.post(`${R}/documents`, form({ requirementCode: "R03" }, "R03"))).status === 403);
-  const mailFiles = fs.readdirSync(path.join(dataDir, "outbox"));
-  const mails = mailFiles.map((name) => JSON.parse(fs.readFileSync(path.join(dataDir, "outbox", name), "utf8")));
+  const mailFiles = fs.readdirSync(path.join(dataDir, "outbox-email"));
+  const mails = mailFiles.map((name) => JSON.parse(fs.readFileSync(path.join(dataDir, "outbox-email", name), "utf8")));
   const mail = mails.find((item) => item.subject === "CFE pidió correcciones en tu expediente");
   ok("correo genérico sin detalles de observaciones", !!mail && mail.text.includes(newExp.folio) && !JSON.stringify(mail).includes("Actualizar recibo") && !JSON.stringify(mail).includes("Nota interna confidencial"));
   const reprocesoDb = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"), { readOnly: true });

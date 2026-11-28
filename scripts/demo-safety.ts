@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 function isWithin(parent: string, candidate: string): boolean {
@@ -10,6 +11,18 @@ function normalized(value: string): string {
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
+function canonicalPath(value: string): string {
+  let existing = path.resolve(value);
+  const suffix: string[] = [];
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    suffix.unshift(path.basename(existing));
+    existing = parent;
+  }
+  return path.resolve(fs.realpathSync.native(existing), ...suffix);
+}
+
 export function assertSafeDemoDataDir(): string {
   if (process.env.APP_MODE?.trim().toLowerCase() !== "local") {
     throw new Error("Los comandos de demo requieren APP_MODE=local.");
@@ -19,20 +32,25 @@ export function assertSafeDemoDataDir(): string {
     throw new Error("Define LOCAL_DATA_DIR con una carpeta aislada antes de ejecutar el comando.");
   }
 
-  const dataDir = path.resolve(configured);
-  const realDataDir = path.resolve(
+  const dataDir = canonicalPath(configured);
+  const realDataDir = canonicalPath(
     process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "ConectaAgil") : path.join(process.cwd(), "local-data"),
   );
-  const workspace = path.resolve(process.cwd());
+  const workspace = canonicalPath(process.cwd());
   const safePath = normalized(dataDir);
   const realPath = normalized(realDataDir);
   const workspacePath = normalized(workspace);
+  const oneDriveRoots = [process.env.OneDrive, process.env.OneDriveConsumer, process.env.OneDriveCommercial]
+    .filter((value): value is string => Boolean(value?.trim() && fs.existsSync(value)))
+    .map((value) => normalized(canonicalPath(value)));
+  const containsOneDriveSegment = dataDir.split(/[\\/]+/).some((part) => part.toLowerCase() === "onedrive");
   if (
     safePath === normalized(path.parse(dataDir).root) ||
     isWithin(realPath, safePath) || isWithin(safePath, realPath) ||
-    isWithin(workspacePath, safePath) || isWithin(safePath, workspacePath)
+    isWithin(workspacePath, safePath) || isWithin(safePath, workspacePath) ||
+    containsOneDriveSegment || oneDriveRoots.some((root) => isWithin(root, safePath))
   ) {
-    throw new Error("LOCAL_DATA_DIR debe ser una carpeta aislada, fuera de la base real y del workspace.");
+    throw new Error("LOCAL_DATA_DIR debe ser una carpeta aislada, fuera de la base real, OneDrive y el workspace.");
   }
   return dataDir;
 }

@@ -3,7 +3,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { assertSafeDemoDataDir } from "./demo-safety";
 
-const allowedEntries = new Set(["conecta-agil.sqlite", "documents", "outbox", "zoho-outbox"]);
+const allowedEntries = new Set(["conecta-agil.sqlite", "documents", "outbox", "outbox-email", "zoho-outbox", "CUENTAS_DEMO.local.md"]);
+const privateEntries = new Set(["CUENTAS_DEMO.local.md"]);
 
 function validateName(value: string | undefined): string {
   if (!value || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(value) || value === "." || value === "..") {
@@ -26,6 +27,7 @@ function assertKnownEntries(directory: string): string[] {
 function copyDataFiles(source: string, destination: string, includeDatabase: boolean): void {
   for (const name of assertKnownEntries(source)) {
     if (name === "conecta-agil.sqlite-wal" || name === "conecta-agil.sqlite-shm") continue;
+    if (privateEntries.has(name)) continue;
     if (!includeDatabase && name === "conecta-agil.sqlite") continue;
     fs.cpSync(path.join(source, name), path.join(destination, name), { recursive: true, errorOnExist: true });
   }

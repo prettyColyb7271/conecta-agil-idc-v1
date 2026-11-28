@@ -17,6 +17,7 @@
     "demo:docs": "tsx scripts/demo-docs.ts",
     "demo:seed": "tsx scripts/demo-seed.ts",
     "demo:snapshot": "tsx scripts/demo-snapshot.ts",
+    "cuentas:demo": "tsx scripts/cuentas-demo.ts",
     "zoho:limpiar-demo": "tsx scripts/zoho-limpiar-demo.ts",
     "capturas": "tsx scripts/capturas.ts",
     "formats:grid": "tsx scripts/generate-f01-grid.ts",

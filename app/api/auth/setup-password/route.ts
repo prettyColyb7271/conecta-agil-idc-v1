@@ -35,14 +35,18 @@ export async function POST(request: Request) {
     const nowIso = now.toISOString();
     withTransaction(() => {
       const row = database.prepare(
-        `SELECT id, user_id, expires_at, used_at FROM password_setup_tokens
+        `SELECT id, user_id, created_by, expires_at, used_at FROM password_setup_tokens
          WHERE token_hash = ?`,
-      ).get(hashToken(token)) as { id: string; user_id: string; expires_at: string; used_at: string | null } | undefined;
+      ).get(hashToken(token)) as { id: string; user_id: string; created_by: string | null; expires_at: string; used_at: string | null } | undefined;
       const expiresAt = row ? Date.parse(row.expires_at) : NaN;
       if (!row || row.used_at || !Number.isFinite(expiresAt) || expiresAt <= now.getTime()) throw new Error("INVALID_SETUP_TOKEN");
-      const user = database.prepare("SELECT id, role FROM users WHERE id = ? AND role IN ('cliente', 'coordinador_idc') AND status = 'activo'").get(row.user_id) as { id: string; role: "cliente" | "coordinador_idc" } | undefined;
-      if (!user) throw new Error("INVALID_SETUP_TOKEN");
-      database.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND role IN ('cliente', 'coordinador_idc') AND status = 'activo'").run(hashPassword(newPassword), nowIso, row.user_id);
+      const user = database.prepare("SELECT id, role FROM users WHERE id = ? AND status = 'activo'").get(row.user_id) as { id: string; role: "cliente" | "coordinador_idc" | "admin_seguridad" | "gestor_tramites_cfe" } | undefined;
+      const roleAllowed = user && (user.role === "cliente" || user.role === "coordinador_idc" ||
+        (user.role === "admin_seguridad" && row.created_by === user.id));
+      if (!user || !roleAllowed) throw new Error("INVALID_SETUP_TOKEN");
+      const updated = database.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND role = ? AND status = 'activo'")
+        .run(hashPassword(newPassword), nowIso, row.user_id, user.role);
+      if (Number(updated.changes) !== 1) throw new Error("INVALID_SETUP_TOKEN");
       database.prepare("UPDATE password_setup_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL").run(nowIso, row.id);
       database.prepare("UPDATE password_setup_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL").run(nowIso, row.user_id);
       database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(nowIso, row.user_id);
