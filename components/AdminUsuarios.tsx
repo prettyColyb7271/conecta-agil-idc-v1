@@ -250,7 +250,8 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
                         { field: "telefono_contacto", label: "Teléfono", masked: user.telefono_contacto ?? "No capturado" },
                       ]} />
                       <p className="mt-1 text-xs text-slate-600">
-                        {ROLE_LABEL[user.role]} · Último acceso: {user.last_login_at ? formatoFechaHora(user.last_login_at) : "Nunca"} · Responsables: {user.responsible_count}
+                        {ROLE_LABEL[user.role]} · Último acceso: {user.last_login_at ? formatoFechaHora(user.last_login_at) : "Nunca"}
+                        {user.role === "coordinador_idc" && ` · Expedientes activos a su cargo: ${user.responsible_count}`}
                       </p>
                     </div>
                     <StatusBadge tone={user.status === "activo" ? "positive" : user.status === "bloqueado" ? "negative" : user.status === "baja" ? "neutral" : "warning"}>{LABEL[user.status]}</StatusBadge>

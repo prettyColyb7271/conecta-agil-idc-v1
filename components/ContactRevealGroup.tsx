@@ -50,12 +50,14 @@ export default function ContactRevealGroup({ userId, values }: { userId: string;
     if (pendingField) await reveal(pendingField, code);
   }
 
+  const isCaptured = (value: string) => value.trim().length > 0 && !/^no capturado(?:s)?$/i.test(value.trim());
+
   return (
     <div className="mt-2 space-y-2">
       {values.map((item) => (
         <div key={item.field} className="flex flex-wrap items-center gap-2 text-xs">
           <span><strong>{item.label}:</strong> {revealed?.field === item.field ? revealed.value : item.masked || "No capturado"}</span>
-          <SmallButton disabled={mfaRequired} onClick={() => void reveal(item.field)} aria-label={`Mostrar ${item.label.toLowerCase()}`}>Mostrar</SmallButton>
+          {isCaptured(item.masked) && <SmallButton disabled={mfaRequired} onClick={() => void reveal(item.field)} aria-label={`Mostrar ${item.label.toLowerCase()}`}>Mostrar</SmallButton>}
         </div>
       ))}
       {mfaRequired && (

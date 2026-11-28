@@ -169,16 +169,19 @@ export default function RecoveryPanel({ mode, showHeading = true }: { mode: "dem
                         {request.discarded ? "Descartada" : request.status === "pendiente" ? "Pendiente" : "Atendida"}
                       </StatusBadge>
                     </div>
+                    {request.accountStatus === "bloqueado" && (
+                      <MessageBox tone="error">Desbloquea la cuenta antes de entregar el código o el enlace.</MessageBox>
+                    )}
                     {tab === "pendiente" && (
                       <div className="mt-3 flex flex-wrap items-end gap-2">
                         {request.accountExists && !request.isSelf && (
                           <>
                             {(request.role === "cliente" || request.role === "coordinador_idc") && (
                               <>
-                                <SmallButton disabled={busy !== null} onClick={() => void act(request, "generate")}>
+                                <SmallButton disabled={busy !== null || request.accountStatus === "bloqueado"} onClick={() => void act(request, "generate")}>
                                   {busy === `${request.id}:generate` ? "Generando…" : "Generar enlace de un solo uso"}
                                 </SmallButton>
-                                <SmallButton disabled={busy !== null} onClick={() => void act(request, "generate_code")}>
+                                <SmallButton disabled={busy !== null || request.accountStatus === "bloqueado"} onClick={() => void act(request, "generate_code")}>
                                   {busy === `${request.id}:generate_code` ? "Generando…" : "Generar código"}
                                 </SmallButton>
                               </>

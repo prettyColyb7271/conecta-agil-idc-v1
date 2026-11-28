@@ -7,6 +7,7 @@ import { readJson, RequestInputError } from "@/lib/http";
 
 type RecoveryStatus = "pendiente" | "atendida";
 const PUBLIC_RECOVERY_MESSAGE = "Si la cuenta existe, un Gestor IDC o el administrador entregará un enlace por un medio verificado.";
+const BLOCKED_RECOVERY_MESSAGE = "Desbloquea la cuenta antes de entregar el código o el enlace.";
 const RECOVERY_WINDOW_MS = 60 * 60 * 1000;
 const RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -211,6 +212,9 @@ export async function POST(request: Request) {
 
     if (!target || (actor.role === "coordinador_idc" && target.role !== "cliente") || (actor.role === "admin_seguridad" && target.id === actor.id)) {
       return NextResponse.json({ error: "La cuenta no está disponible para esta solicitud." }, { status: 404 });
+    }
+    if ((body.action === "generate" || body.action === "generate_code") && target.status === "bloqueado") {
+      return NextResponse.json({ error: BLOCKED_RECOVERY_MESSAGE }, { status: 409 });
     }
     if (body.action === "generate" && target.role === "admin_seguridad") {
       return NextResponse.json({ error: "La recuperación por enlace no está disponible para administradores." }, { status: 400 });
