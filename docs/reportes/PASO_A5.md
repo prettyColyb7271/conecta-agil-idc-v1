@@ -47,7 +47,7 @@ Todas son ficticias, se generan en `docs/reporte/capturas/` y se validan en el D
 | Hash | Cambio |
 |---|---|
 | `f82373a` | Herramientas de datos ficticios, snapshots, limpieza Zoho y pruebas aisladas |
-| `HASH_CAPTURAS` | Corrida automatizada, guion de 15 minutos, 22 capturas y reporte |
+| `2249b23` | Corrida automatizada, guion de 15 minutos, 22 capturas y reporte |
 
 ## Verificación aislada
 
