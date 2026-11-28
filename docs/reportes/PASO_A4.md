@@ -1,0 +1,71 @@
+# Paso A4 · Zoho en modo archivo
+
+Rama `paso-a4`, creada desde `desarrollo` en `3554d68`. Estado al 27/11/2026: implementación y regresión completas; pendiente de aprobación del supervisor. No hubo push ni merge.
+
+## Alcance implementado
+
+- La migración `009_outbox.sql` crea la outbox y eleva `schemaVersion` a 9. La escritura de la outbox participa en la transacción de cada evento de negocio, incluido `cfe_incompleto`; si falla la transacción no queda el evento ni su notificación. Ver [009_outbox.sql](../../lib/db/migrations/009_outbox.sql), [outbox.ts](../../lib/zoho/outbox.ts) y [gates.ts](../../lib/data/gates.ts).
+- El snapshot de cada evento contiene el folio, el responsable, los ocho Gates, estados, fechas y subtareas seguras (códigos de requisitos y etiquetas genéricas de eventos). El reproceso reabre Gate 2 y marca como observados los requisitos elegidos, sin exportar retroalimentación ni notas internas. Ver [outbox.ts](../../lib/zoho/outbox.ts) y [supervisor-a4.mjs](../../tests/e2e/supervisor-a4.mjs).
+- `ZOHO_TRANSPORT=file` es el transporte predeterminado. Cada envío escribe un JSON en `LOCAL_DATA_DIR/zoho-outbox/`. Un fallo del transporte queda como `fallido` y no revierte el evento del expediente; Reintentar guarda el identificador de envío y no duplica un envío ya completado. Ver [adapter.ts](../../lib/zoho/adapter.ts) y [outbox.ts](../../lib/zoho/outbox.ts).
+- La pantalla admin **Integraciones** muestra pendientes, enviados y fallidos con Reintentar, y una maqueta de Zoho Projects con ocho tareas (Gate 1–Gate 8) y sus subtareas, derivada exclusivamente de la outbox. Gestores y clientes reciben 403 en la API de administración. Ver [IntegrationsPanel.tsx](../../app/admin/integraciones/IntegrationsPanel.tsx), [route.ts](../../app/api/admin/integraciones/route.ts) y [supervisor-a4.mjs](../../tests/e2e/supervisor-a4.mjs).
+- Los payloads y la vista no incluyen RFC, INE, archivos, contenido documental, retroalimentación de CFE ni notas internas. La suite usa valores secretos ficticios para comprobar que no aparecen en los JSON ni en la respuesta admin.
+- Se programó el transporte `api` con OAuth de refresh token y variables de configuración vacías en [.env.example](../../.env.example). No se conectó ni probó contra Zoho: no hay credenciales. Para la presentación se eligió el plan gratuito y el modo archivo; los documentos nunca se envían a Zoho.
+
+## Commits
+
+| Commit | Cambio |
+|---|---|
+| `563a368` | Outbox transaccional, transporte Zoho y migración |
+| `4f3958b47035852f776feec60be88f7384209f88` | Pantalla admin, maqueta y regresión A4 |
+
+## Verificación aislada
+
+La regla 2 se ejecutó en una copia de validación limpia (`paso-a4-validation`) después de `npm ci`, con modo local y datos ficticios.
+
+| Verificación | Resultado |
+|---|---|
+| `npm run lint` | ✅ |
+| `npx tsc --noEmit` | ✅ |
+| `npm run plantillas:check` | ✅ |
+| `npm run build` en modo local | ✅ |
+| `npm run test:e2e:isolated` | ✅ 15 suites con conteo explícito: **745 ✅ / 0 ❌**; 4 procesos adicionales terminaron sin publicar conteo |
+| `supervisor-a4.mjs` | ✅ **119 ✅ / 0 ❌** |
+| `corrida-ui-g0-g7.mjs` | ✅ **228 ✅ / 0 ❌**, flujo completo G0→G7 |
+| `supervisor-origen-8d.mjs` | ✅ **36 ✅ / 0 ❌**, recuperación del cliente sigue cubierta |
+| Migración con datos existentes | ✅ `migration-004-with-data` y `db:migrate` terminaron correctamente; A4 verifica además `schemaVersion=9` |
+
+Desglose de las 15 suites que imprimieron conteo:
+
+| Suite | ✅ | ❌ |
+|---|---:|---:|
+| `supervisor-a0-runner` | 8 | 0 |
+| `supervisor-pasos` | 94 | 0 |
+| `supervisor-docs` | 33 | 0 |
+| `supervisor-paso6` | 13 | 0 |
+| `supervisor-gestores` | 27 | 0 |
+| `supervisor-g0-g2` | 37 | 0 |
+| `supervisor-a1` | 18 | 0 |
+| `supervisor-a3` | 12 | 0 |
+| `supervisor-paso7` | 6 | 0 |
+| `supervisor-g3-g7` | 68 | 0 |
+| `corrida-ui-g0-g7` | 228 | 0 |
+| `supervisor-seguridad-aislada` | 10 | 0 |
+| `supervisor-seguridad-ataque` | 36 | 0 |
+| `supervisor-origen-8d` | 36 | 0 |
+| `supervisor-a4` | 119 | 0 |
+| **Total** | **745** | **0** |
+
+`supervisor-a4.mjs` comprueba la secuencia G0→G7 en modo archivo, ocho tareas y subtareas, creación de JSON, exclusión de datos sensibles, reproceso CFE y atomicidad ante fallo, permisos 403, reintento sin duplicados y migración a versión 9 sobre datos existentes. `regresiones-pr1`, `migration-004-with-data`, `db-migrate` y `db-seed` también finalizaron correctamente dentro del entorno aislado; no se sembró la base de OneDrive.
+
+La instalación notificó siete vulnerabilidades moderadas en el árbol de dependencias. No se modificaron dependencias ni se ejecutó `npm audit fix`.
+
+## Capturas ficticias
+
+- [Integraciones: pendientes, enviados, fallidos y Reintentar](img/a4-integraciones.png)
+- [Maqueta “Así se vería en Zoho Projects”](img/a4-maqueta-zoho.png)
+
+Las imágenes contienen únicamente folios, responsables, fechas y estados ficticios; no son capturas de una cuenta Zoho real.
+
+## Servidor local
+
+Se compiló la copia de OneDrive en modo local con `npm run build`, se ejecutó `npm run db:migrate` sin seed (`schemaVersion=9`) y se inició con `npm run start:local`. `http://localhost:3140/api/health` respondió HTTP 200, `modo=local` y `schemaVersion=9`. El servidor quedó activo.
