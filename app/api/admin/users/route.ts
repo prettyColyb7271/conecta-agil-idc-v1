@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { assertSameOrigin, auditEvent, createPasswordSetupToken, disableUserMfa, getCurrentUser, hashPassword, mfaRequiredResponse, passwordChangeRequired, withTransaction } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
+import { enqueueZohoOutbox } from "@/lib/zoho/outbox";
+import { scheduleZohoDelivery } from "@/lib/zoho/adapter";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -60,6 +62,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "El motivo debe tener al menos 5 caracteres." }, { status: 400 });
     }
     let returnValue: { ok: boolean; setupUrl?: string; expiresAt?: string; unassignedCount?: number } | undefined;
+    const outboxIds: string[] = [];
     withTransaction(() => {
       const now = new Date().toISOString();
       if (body.action === "block") {
@@ -70,6 +73,7 @@ export async function POST(request: Request) {
             JOIN expediente_assignments ea ON ea.expediente_id = e.id
             WHERE ea.user_id = ? AND ea.assignment_type = 'coordinador_idc' AND ea.ends_at IS NULL
           `).all(target.id) as Array<{ id: string; folio: string }>;
+          for (const expediente of affected) outboxIds.push(enqueueZohoOutbox(expediente.id, "responsable_bloqueado", now));
           const activeManagers = database.prepare("SELECT id FROM users WHERE role = 'coordinador_idc' AND status = 'activo' AND id != ?").all(target.id) as Array<{ id: string }>;
           for (const manager of activeManagers) {
             database.prepare("INSERT INTO notifications (id, user_id, type, priority, title, body, created_at) VALUES (?, ?, 'responsable_bloqueado', 'alta', 'Reasignación necesaria', ?, ?)").run(crypto.randomUUID(), manager.id, `El Gestor IDC bloqueado dejó ${affected.length} expediente(s) sin responsable activo. Revisa y reasigna.`, now);
@@ -105,6 +109,7 @@ export async function POST(request: Request) {
         auditEvent({ actorId: actor.id, actorRole: actor.role, eventType: "revocacion_sesiones", entityType: "user", entityId: target.id });
       }
     });
+    for (const id of outboxIds) scheduleZohoDelivery(id);
     return NextResponse.json(returnValue ?? { ok: true });
   } catch (error) {
     if (error instanceof Response) return error;

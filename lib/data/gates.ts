@@ -7,6 +7,8 @@ import { getExpediente } from "@/lib/data/expedientes";
 import { REQUISITOS_POST_INSTALACION, REQUISITOS_PRE_FIRMA } from "@/lib/etapas";
 import { sumarMesesCalendario } from "@/lib/fechas";
 import { diasHastaFecha, nivelAlertaOficio } from "@/lib/vigencia-oficio";
+import { enqueueZohoOutbox } from "@/lib/zoho/outbox";
+import { scheduleZohoDelivery } from "@/lib/zoho/adapter";
 
 export class GateValidationError extends Error {
   constructor(message: string) {
@@ -207,8 +209,9 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
     : undefined;
   const id = existingSignature?.id ?? crypto.randomUUID();
   const insertEvent = () => getDatabase().prepare("INSERT INTO external_events (id, expediente_id, event_type, event_date, description, document_id, created_by, created_at, medio, solicitud_numero, vigencia_meses, vence_at, resultado, subgate_requerido, subgate_document_id, reinicio_at, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, expedienteId, input.eventType, input.eventDate ?? now, input.description.trim(), input.documentId ?? null, user.id, now, input.medio ?? null, input.solicitudNumero ?? null, input.vigenciaMeses ?? null, expiresAt ?? null, input.resultado ?? null, input.subgateRequerido ? 1 : 0, input.subgateDocumentId ?? null, input.eventType === "cfe_incompleto" ? now : null, input.eventType === "cfe_incompleto" ? JSON.stringify({ requirementCodes: codes }) : "{}");
-  if (input.eventType === "cfe_incompleto") {
-    withTransaction(() => {
+  let outboxId = "";
+  withTransaction(() => {
+    if (input.eventType === "cfe_incompleto") {
       insertEvent();
       getDatabase().prepare("UPDATE gates SET status = 'abierto', closed_by = NULL, closed_at = NULL, reopened_at = ?, reopen_reason = ? WHERE expediente_id = ? AND gate_code = 'G1'").run(now, input.description.trim(), expedienteId);
       getDatabase().prepare("UPDATE gates SET status = 'bloqueado' WHERE expediente_id = ? AND gate_code >= 'G2'").run(expedienteId);
@@ -224,14 +227,14 @@ export function addExternalEvent(user: AuthUser, expedienteId: string, input: { 
         const note = notes[code];
         if (typeof note === "string" && note.trim()) observation.run(crypto.randomUUID(), expedienteId, requirement.id, user.id, "interno_idc", note.trim(), now);
       }
-    });
-  } else if (existingSignature) {
-    getDatabase().prepare("UPDATE external_events SET event_date = ?, description = ? WHERE id = ?").run(input.eventDate ?? now, input.description.trim(), id);
-  } else insertEvent();
-  if (input.eventType === "ingreso_acuse") {
-    marcarIngresoConAcuse(expedienteId, input.documentId, now);
-  }
-  auditEvent({ actorId: user.id, actorRole: user.role, eventType: existingSignature ? "evidencia_externa_actualizada" : "evidencia_externa_registrada", entityType: "external_event", entityId: id, expedienteId, metadata: { event_type: input.eventType, document_id: input.documentId ?? null } });
+    } else if (existingSignature) {
+      getDatabase().prepare("UPDATE external_events SET event_date = ?, description = ? WHERE id = ?").run(input.eventDate ?? now, input.description.trim(), id);
+    } else insertEvent();
+    if (input.eventType === "ingreso_acuse") marcarIngresoConAcuse(expedienteId, input.documentId, now);
+    auditEvent({ actorId: user.id, actorRole: user.role, eventType: existingSignature ? "evidencia_externa_actualizada" : "evidencia_externa_registrada", entityType: "external_event", entityId: id, expedienteId, metadata: { event_type: input.eventType, document_id: input.documentId ?? null } });
+    outboxId = enqueueZohoOutbox(expedienteId, input.eventType === "resolucion_cfe" ? "oficio_resolutivo_registrado" : `evidencia_${input.eventType}_registrada`, now);
+  });
+  scheduleZohoDelivery(outboxId);
   return { id, eventType: input.eventType, reinicioAt: input.eventType === "cfe_incompleto" ? now : undefined };
 }
 
@@ -243,6 +246,7 @@ export function transitionGate(user: AuthUser, expedienteId: string, gateCode: s
   const database = getDatabase();
   const current = database.prepare("SELECT status FROM gates WHERE expediente_id = ? AND gate_code = ?").get(expedienteId, gate) as { status: string } | undefined;
   if (!current) throw new Error("NOT_FOUND");
+  let outboxId = "";
   if (action === "close") {
     const expedienteStatus = database.prepare("SELECT status FROM expedientes WHERE id = ?").get(expedienteId) as { status: string } | undefined;
     if (expedienteStatus?.status === "cerrado") throw new GateConflictError("El expediente está cerrado.");
@@ -260,6 +264,7 @@ export function transitionGate(user: AuthUser, expedienteId: string, gateCode: s
       if (gate === "G5") initializeUiieRequirements(expedienteId);
       if (gate === "G7") database.prepare("UPDATE expedientes SET status = 'cerrado', updated_at = ? WHERE id = ?").run(now, expedienteId);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "cierre_gate", entityType: "gate", entityId: gate, expedienteId, metadata: { gate_code: gate } });
+      outboxId = enqueueZohoOutbox(expedienteId, gate === "G7" ? "cierre_expediente" : "cierre_gate", now);
     });
   } else {
     if (!reason?.trim()) throw new GateValidationError("El motivo de reapertura es obligatorio.");
@@ -275,7 +280,9 @@ export function transitionGate(user: AuthUser, expedienteId: string, gateCode: s
       }
       if (gate === "G7") database.prepare("UPDATE expedientes SET status = 'activo', updated_at = ? WHERE id = ?").run(now, expedienteId);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "reapertura_gate", entityType: "gate", entityId: gate, expedienteId, metadata: { gate_code: gate, reason: reason.trim() } });
+      outboxId = enqueueZohoOutbox(expedienteId, "reapertura_gate", now);
     });
   }
+  scheduleZohoDelivery(outboxId);
   return gateRows(expedienteId);
 }

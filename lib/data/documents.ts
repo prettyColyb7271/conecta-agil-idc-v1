@@ -9,6 +9,8 @@ import { getExpediente, type ScopeUser } from "@/lib/data/expedientes";
 import { assertRequisitosIngreso, marcarIngresoConAcuse } from "@/lib/data/gates";
 import { esPostInstalacion } from "@/lib/etapas";
 import { sumarMesesCalendario } from "@/lib/fechas";
+import { enqueueZohoOutbox } from "@/lib/zoho/outbox";
+import { scheduleZohoDelivery } from "@/lib/zoho/adapter";
 
 export class DocumentValidationError extends Error {
   constructor(message: string) {
@@ -130,6 +132,7 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
   const adapters = await getAdapters();
   const stored = await adapters.storage.put(bytes, { storageKey, filename: saneFilename(file.name), mimeType: file.type });
   const now = new Date().toISOString();
+  let outboxId = "";
   try {
     withTransaction(() => {
       if (!document) database.prepare("INSERT INTO documents (id, expediente_id, requirement_id, document_type, source, sensitivity, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'cargado', ?, ?, ?)").run(documentId, expedienteId, requirement.id, requirementCode, isIdc(user) ? "idc" : "cliente", requirement.sensible ? "sensible" : "normal", user.id, now, now);
@@ -138,11 +141,13 @@ export async function uploadDocument(user: AuthUser, expedienteId: string, requi
       database.prepare("UPDATE expediente_requirements SET status = ?, document_id = ?, version_id = ?, observed_reason = NULL, updated_at = ? WHERE id = ?").run(sourceVersion ? "escaneo_recibido" : "cargado", documentId, versionId, now, requirement.id);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "carga_documento", entityType: "document_version", entityId: versionId, expedienteId, metadata: { requirement_code: requirementCode, sha256: stored.sha256, size_bytes: stored.sizeBytes } });
       notifyIdc(expedienteId, "Documento recibido", `${requirementCode} fue cargado en ${expediente.folio}.`);
+      outboxId = enqueueZohoOutbox(expedienteId, "documento_cargado", now);
     });
   } catch (error) {
     await adapters.storage.remove(storageKey).catch(() => undefined);
     throw error;
   }
+  scheduleZohoDelivery(outboxId);
   return { documentId, versionId, versionNumber, sha256: stored.sha256, sizeBytes: stored.sizeBytes, status: sourceVersion ? "escaneo_recibido" : "cargado" };
 }
 
@@ -175,6 +180,7 @@ export async function uploadExternalEvidence(user: AuthUser, expedienteId: strin
   const eventDate = event.eventDate ?? now;
   const expiresAt = event.venceAt ?? (event.vigenciaMeses && eventType === "resolucion_cfe" ? sumarMesesCalendario(eventDate, event.vigenciaMeses).toISOString() : null);
   let eventId = "";
+  let outboxId = "";
   const storedKeys: string[] = [];
   try {
     const stored = await adapters.storage.put(bytes, { storageKey, filename: saneFilename(file.name), mimeType: file.type });
@@ -198,7 +204,9 @@ export async function uploadExternalEvidence(user: AuthUser, expedienteId: strin
       database.prepare("INSERT INTO external_events (id, expediente_id, event_type, event_date, description, document_id, created_by, created_at, medio, solicitud_numero, vigencia_meses, vence_at, resultado, subgate_requerido, subgate_document_id, reinicio_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(eventId, expedienteId, eventType, eventDate, event.description.trim(), documentId, user.id, now, event.medio ?? null, event.solicitudNumero ?? null, event.vigenciaMeses ?? null, expiresAt, event.resultado ?? null, event.subgateRequerido ? 1 : 0, subgateDocumentId, null);
       if (eventType === "ingreso_acuse") marcarIngresoConAcuse(expedienteId, documentId, now);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "evidencia_externa_registrada", entityType: "external_event", entityId: eventId, expedienteId, metadata: { event_type: eventType, document_id: documentId, sha256: stored.sha256 } });
+      outboxId = enqueueZohoOutbox(expedienteId, eventType === "resolucion_cfe" ? "oficio_resolutivo_registrado" : `evidencia_${eventType}_registrada`, now);
     });
+    scheduleZohoDelivery(outboxId);
     return { documentId, versionId, eventId, eventType, eventDate, sha256: stored.sha256, sizeBytes: stored.sizeBytes, folio: expediente.folio };
   } catch (error) {
     for (const key of storedKeys) {
@@ -222,11 +230,14 @@ export function verifyScannedDocument(user: AuthUser, expedienteId: string, requ
   if (row.status !== "escaneo_recibido" || !row.source_version_id) throw new DocumentConflictError("No hay un escaneo firmado pendiente de verificación.");
   if (row.author_id === user.id) throw new DocumentConflictError("No puedes verificar un escaneo que tú mismo subiste.");
   const now = new Date().toISOString();
+  let outboxId = "";
   withTransaction(() => {
     database.prepare("UPDATE expediente_requirements SET status = 'escaneo_verificado_idc', updated_at = ? WHERE id = ?").run(now, row.requirement_id);
     database.prepare("UPDATE documents SET status = 'escaneo_verificado_idc', updated_at = ? WHERE id = ?").run(now, row.document_id);
     auditEvent({ actorId: user.id, actorRole: user.role, eventType: "verificacion_escaneo", entityType: "document_version", entityId: versionId, expedienteId, metadata: { requirement_code: requirementCode, source_version_id: row.source_version_id } });
+    outboxId = enqueueZohoOutbox(expedienteId, "escaneo_verificado", now);
   });
+  scheduleZohoDelivery(outboxId);
   return { status: "escaneo_verificado_idc", versionId };
 }
 
@@ -287,11 +298,14 @@ export function reviewRequirement(user: AuthUser, expedienteId: string, requirem
   // node:sqlite no acepta undefined como parámetro; validar no lleva motivo.
   const visibleReason = visibility === "cliente" ? reason ?? null : null;
   const now = new Date().toISOString();
+  let outboxId = "";
   withTransaction(() => {
     database.prepare("UPDATE expediente_requirements SET status = ?, observed_reason = ?, validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ?").run(status, visibleReason, action === "validate" ? user.id : null, action === "validate" ? now : null, now, requirement.id);
     if (action !== "validate") database.prepare("INSERT INTO observations (id, expediente_id, requirement_id, author_id, visibility, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(crypto.randomUUID(), expedienteId, requirement.id, user.id, visibility, reason, now);
     auditEvent({ actorId: user.id, actorRole: user.role, eventType: action === "validate" ? "validacion_requisito" : action === "observe" ? "observacion_requisito" : "no_aplica_requisito", entityType: "expediente_requirement", entityId: requirement.id, expedienteId, metadata: { requirement_code: requirementCode, visibility } });
     if (visibility === "cliente") notifyClient(expedienteId, action === "validate" ? "Requisito validado" : "Requisito observado", `${requirementCode} fue actualizado en ${expediente.folio}.`);
+    outboxId = enqueueZohoOutbox(expedienteId, `requisito_${action === "validate" ? "validado" : action === "observe" ? "observado" : "no_aplica"}`, now);
   });
+  scheduleZohoDelivery(outboxId);
   return { status };
 }

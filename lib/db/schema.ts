@@ -21,6 +21,7 @@ export const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   mfa_backup_codes: ["id", "user_id", "code_hash", "used_at", "created_at"],
   mfa_login_challenges: ["id", "user_id", "token_hash", "expires_at", "attempts", "created_at"],
   password_recovery_requests: ["id", "email", "status", "requested_at", "handled_by", "handled_at"],
+  outbox: ["id", "event_type", "expediente_id", "payload_json", "status", "attempts", "last_error", "last_attempt_at", "zoho_id", "created_at"],
 };
 
 export const TABLE_PRIMARY_KEYS: Record<TableName, string> = {
@@ -44,6 +45,7 @@ export const TABLE_PRIMARY_KEYS: Record<TableName, string> = {
   mfa_backup_codes: "id",
   mfa_login_challenges: "id",
   password_recovery_requests: "id",
+  outbox: "id",
 };
 
 export function assertTableName(table: string): asserts table is TableName {

@@ -21,6 +21,7 @@ export const TABLE_NAMES = [
   "mfa_backup_codes",
   "mfa_login_challenges",
   "password_recovery_requests",
+  "outbox",
 ] as const;
 
 export type TableName = (typeof TABLE_NAMES)[number];
