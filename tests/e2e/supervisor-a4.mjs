@@ -345,6 +345,73 @@ try {
   const adminDashboard = must("admin autorizado consulta outbox", await admin.get("/api/admin/integraciones"), 200);
   ok("admin ve la pantalla Integraciones y la maqueta Zoho", (await admin.get("/admin/integraciones")).text.includes("Así se vería en Zoho Projects") &&
     adminDashboard.projects.some((project) => project.folio === mainExpediente.folio && project.tasks.length === 8));
+
+  const demoDatabase = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"), { readOnly: true });
+  const demoExpediente = demoDatabase.prepare("SELECT id FROM expedientes WHERE folio = 'IDC-DEMO-0001'").get();
+  demoDatabase.close();
+  if (!demoExpediente) throw new Error("No se encontró el expediente demo sembrado.");
+  must("registrar evento ficticio en IDC-DEMO-0001", await manager.post(`/api/expedientes/${demoExpediente.id}/gates`, {
+    action: "event",
+    eventType: "visita_uiie",
+    description: "Visita UIIE ficticia para A4e",
+  }), 201);
+  await waitForExpedienteSent(demoExpediente.id);
+  const demoDashboard = must("A4e: GET Integraciones admite el folio de semilla", await admin.get("/api/admin/integraciones"), 200);
+  const demoPage = await admin.get("/admin/integraciones");
+  ok("A4e: evento en IDC-DEMO-0001 aparece en la maqueta", demoDashboard.projects.some((project) => project.folio === "IDC-DEMO-0001") &&
+    demoPage.status === 200 && demoPage.text.includes("IDC-DEMO-0001"));
+
+  const unreadableId = crypto.randomUUID();
+  const unreadableCreatedAt = "2026-11-27T12:00:00.000Z";
+  database = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  database.prepare(`
+    INSERT INTO outbox (id, event_type, expediente_id, payload_json, status, attempts, last_error, created_at)
+    VALUES (?, 'diagnostico_ilegible_privado', ?, ?, 'fallido', 1, ?, ?)
+  `).run(unreadableId, mainExpediente.id, "{invalid A4e payload SECRET", "ERROR_PRIVADO_A4E", unreadableCreatedAt);
+  database.close();
+  database = null;
+  const unreadableDashboard = must("A4e: GET Integraciones tolera payload inválido", await admin.get("/api/admin/integraciones"), 200);
+  const unreadableEntry = unreadableDashboard.entries.find((entry) => entry.id === unreadableId);
+  const unreadablePage = await admin.get("/admin/integraciones");
+  const expectedUnreadableDate = new Intl.DateTimeFormat("es-MX", { dateStyle: "short" }).format(new Date(2026, 10, 27));
+  const unreadablePageHasSafeRow = unreadablePage.status === 200 && unreadablePage.text.includes("Registro no legible") &&
+    unreadablePage.text.includes("fallido") && unreadablePage.text.includes(expectedUnreadableDate) &&
+    !unreadablePage.text.includes("invalid A4e payload SECRET") && !unreadablePage.text.includes("ERROR_PRIVADO_A4E");
+  ok("A4e: fila inválida muestra solo estado/fecha, sin payload ni error crudo", unreadableEntry?.snapshot === null &&
+    unreadableEntry.status === "fallido" && unreadableEntry.createdAt === unreadableCreatedAt &&
+    unreadableEntry.lastError === null && unreadableEntry.retryable === false && unreadablePageHasSafeRow,
+  JSON.stringify({
+    apiSnapshotNull: unreadableEntry?.snapshot === null,
+    status: unreadableEntry?.status,
+    createdAt: unreadableEntry?.createdAt,
+    lastErrorRedacted: unreadableEntry?.lastError === null,
+    retryDisabled: unreadableEntry?.retryable === false,
+    pageStatus: unreadablePage.status,
+    rowLabelVisible: unreadablePage.text.includes("Registro no legible"),
+    rowStatusVisible: unreadablePage.text.includes("fallido"),
+    expectedDate: expectedUnreadableDate,
+    dateVisible: unreadablePage.text.includes(expectedUnreadableDate),
+  }));
+  ok("A4e: las otras filas y proyectos siguen visibles", unreadableDashboard.projects.some((project) => project.folio === mainExpediente.folio) &&
+    unreadableDashboard.projects.some((project) => project.folio === "IDC-DEMO-0001") &&
+    unreadablePage.text.includes(mainExpediente.folio) && unreadablePage.text.includes("IDC-DEMO-0001"));
+
+  database = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  database.exec("ALTER TABLE outbox RENAME TO outbox_a4e_backup;");
+  database.close();
+  database = null;
+  let unavailablePage;
+  try {
+    unavailablePage = await admin.get("/admin/integraciones");
+  } finally {
+    database = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+    database.exec("ALTER TABLE outbox_a4e_backup RENAME TO outbox;");
+    database.close();
+    database = null;
+  }
+  ok("A4e: si falla el tablero, la página muestra el mensaje claro", unavailablePage.status === 200 &&
+    unavailablePage.text.includes("No fue posible consultar las integraciones"));
+
   ok("gestor y cliente reciben 403 para la outbox", (await manager.get("/api/admin/integraciones")).status === 403 &&
     (await client.get("/api/admin/integraciones")).status === 403);
   const dashboardText = JSON.stringify(adminDashboard);

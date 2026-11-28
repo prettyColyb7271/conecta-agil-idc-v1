@@ -39,7 +39,7 @@ export type OutboxEntry = {
   lastError: string | null;
   lastAttemptAt: string | null;
   createdAt: string;
-  snapshot: ZohoSnapshot;
+  snapshot: ZohoSnapshot | null;
   retryable: boolean;
   consolidatedAt: string | null;
 };
@@ -200,7 +200,7 @@ export function enqueueZohoOutbox(expedienteId: string, eventType: string, creat
 
 function parseSnapshot(payload: string): ZohoSnapshot {
   const value = JSON.parse(payload) as Partial<ZohoSnapshot>;
-  if (value.version !== 1 || typeof value.folio !== "string" || !/^IDC-\d{4}-\d{4}$/.test(value.folio) || !Array.isArray(value.tasks) || value.tasks.length !== 8) {
+  if (value.version !== 1 || typeof value.folio !== "string" || !/^IDC-(?:\d{4}|DEMO)-\d{4}$/.test(value.folio) || !Array.isArray(value.tasks) || value.tasks.length !== 8) {
     throw new Error("El snapshot de Zoho guardado en la outbox no es válido.");
   }
   const eventType = typeof value.eventType === "string" && (OUTBOX_EVENTS.has(value.eventType) || /^evidencia_[a-z_]+_registrada$/.test(value.eventType))
@@ -264,19 +264,27 @@ function readEntries(): OutboxEntryWithTarget[] {
     created_at: string; payload_json: string; zoho_id: string | null;
   }>;
   const now = Date.now();
-  return rows.map((row) => ({
-    id: row.id,
-    eventType: row.event_type,
-    status: row.status,
-    attempts: row.attempts,
-    lastError: row.last_error,
-    lastAttemptAt: row.last_attempt_at,
-    createdAt: row.created_at,
-    snapshot: parseSnapshot(row.payload_json),
-    retryable: canRetry(row.status, row.created_at, row.last_attempt_at, now),
-    consolidatedAt: null,
-    consolidatedTargetId: consolidationTarget(row.zoho_id),
-  }));
+  return rows.map((row) => {
+    let snapshot: ZohoSnapshot | null;
+    try {
+      snapshot = parseSnapshot(row.payload_json);
+    } catch {
+      snapshot = null;
+    }
+    return {
+      id: row.id,
+      eventType: snapshot ? row.event_type : "registro_ilegible",
+      status: row.status,
+      attempts: row.attempts,
+      lastError: snapshot ? row.last_error : null,
+      lastAttemptAt: row.last_attempt_at,
+      createdAt: row.created_at,
+      snapshot,
+      retryable: snapshot ? canRetry(row.status, row.created_at, row.last_attempt_at, now) : false,
+      consolidatedAt: null,
+      consolidatedTargetId: consolidationTarget(row.zoho_id),
+    };
+  });
 }
 
 export function getZohoDashboard() {
@@ -287,11 +295,12 @@ export function getZohoDashboard() {
   }));
   const projectsByFolio = new Map<string, ZohoProjectPreview>();
   for (const entry of publicEntries) {
-    if (!projectsByFolio.has(entry.snapshot.folio)) {
-      projectsByFolio.set(entry.snapshot.folio, {
-        folio: entry.snapshot.folio,
-        responsible: entry.snapshot.responsible,
-        tasks: entry.snapshot.tasks,
+    const snapshot = entry.snapshot;
+    if (snapshot && !projectsByFolio.has(snapshot.folio)) {
+      projectsByFolio.set(snapshot.folio, {
+        folio: snapshot.folio,
+        responsible: snapshot.responsible,
+        tasks: snapshot.tasks,
       });
     }
   }

@@ -109,10 +109,16 @@ export default function IntegrationsPanel({ transport, entries, projects }: {
                   {matching.map((entry) => (
                     <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div>
-                        <p className="font-semibold">{entry.snapshot.folio} · {eventLabels[entry.eventType] ?? "Actualización de expediente"}</p>
-                        <p className="text-xs text-slate-600">Intentos: {entry.attempts} · {formatDate(entry.lastAttemptAt ?? entry.createdAt)}</p>
-                        {entry.lastError && <p className="mt-1 text-xs text-red-800">{entry.lastError}</p>}
-                        {entry.consolidatedAt && (
+                        {entry.snapshot ? (
+                          <p className="font-semibold">{entry.snapshot.folio} · {eventLabels[entry.eventType] ?? "Actualización de expediente"}</p>
+                        ) : (
+                          <p className="font-semibold">Registro no legible</p>
+                        )}
+                        <p className="text-xs text-slate-600">
+                          {entry.snapshot && `Intentos: ${entry.attempts} · `}{formatDate(entry.lastAttemptAt ?? entry.createdAt)}
+                        </p>
+                        {entry.snapshot && entry.lastError && <p className="mt-1 text-xs text-red-800">{entry.lastError}</p>}
+                        {entry.snapshot && entry.consolidatedAt && (
                           <p className="mt-1 text-xs text-slate-600">Consolidado en el envío de las {formatTime(entry.consolidatedAt)}</p>
                         )}
                       </div>
