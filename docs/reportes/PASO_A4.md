@@ -87,3 +87,13 @@ Las imágenes contienen únicamente folios, responsables, fechas y estados ficti
 ## Servidor local
 
 Después de A4c se detuvo el proceso anterior de :3140, se compiló la copia de OneDrive en modo local con `npm run build`, se ejecutó `npm run db:migrate` (sin seed; `schemaVersion=9`) y se inició con `npm run start:local`. `http://localhost:3140/api/health` respondió HTTP 200, `modo=local` y `schemaVersion=9`; el servidor quedó activo con el código de `52c739e`.
+
+## A4d · Reintentos sin regresar ni duplicar tareas
+
+El commit `ade03d8` corrige los reintentos antiguos del transporte API. `sendToApi` combina los IDs de Gates guardados en todas las filas del expediente, dando precedencia al más reciente por Gate y completando con los IDs de la fila actual. Antes de enviar, la cola elige la fila no consolidada más nueva: si ya se envió, consolida las pendientes antiguas sin llamar a Zoho; si está pendiente, fallida o atorada, envía ese snapshot más nuevo. Las filas antiguas solo se marcan consolidadas después de que ese envío termine correctamente. Ver [adapter.ts](../../lib/zoho/adapter.ts) y [supervisor-zoho-api.mjs](../../tests/e2e/supervisor-zoho-api.mjs).
+
+La suite dirigida `supervisor-zoho-api.mjs` terminó con **54 ✅ / 0 ❌**. Comprueba el fallo parcial tras crear Gates 1–3 y el reintento de A después de enviar B sin llamadas ni duplicados; el fallo sin IDs; y el caso en que el envío más nuevo falla con 429 y luego se recupera sin consolidar antes de tiempo. También se corrigió el caso de regresión de un pendiente antiguo para probarlo en un expediente aislado.
+
+La Regla 2 completa se ejecutó en `C:\a4dv`, una copia aislada con dependencias instaladas mediante `npm ci`: lint, TypeScript, revisión de plantillas y build local pasaron. `npm run test:e2e:isolated` terminó con **799 ✅ / 0 ❌** en las 16 suites que publicaron conteo; cuatro procesos adicionales (`regresiones-pr1`, `migration-004-with-data`, `db-migrate` y `db-seed`) terminaron con exit 0 sin conteo. En particular, `supervisor-a4.mjs` conservó **119 ✅ / 0 ❌** y `supervisor-zoho-api.mjs` obtuvo **54 ✅ / 0 ❌**. El simulador API fue exclusivamente local; no se usó la cuenta real ni se cambió `ZOHO_TRANSPORT=file` o `.env.local`.
+
+Tras el commit `ade03d8`, se reconstruyó la aplicación de OneDrive, `npm run db:migrate` confirmó `schemaVersion=9` (sin ejecutar `db:seed`) y `npm run start:local` quedó activo en :3140. `/api/health` respondió HTTP 200 con `modo=local` y `schemaVersion=9`. A4d sigue pendiente de aprobación; no hubo push ni merge.
