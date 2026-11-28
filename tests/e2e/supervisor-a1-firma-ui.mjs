@@ -67,7 +67,7 @@ try {
   const expediente = (await cliente.get("/api/expedientes")).json.expedientes[0];
   if (!expediente) throw new Error("No hay expediente ficticio.");
   const endpoint = `/api/expedientes/${expediente.id}`;
-  if ((await cliente.post(`${endpoint}/privacy`, { version: "aviso-privacidad-v1" })).status !== 200 ||
+  if ((await cliente.post(`${endpoint}/privacy`, { version: "0.1-borrador" })).status !== 200 ||
       (await gestor.post(`${endpoint}/gates`, { action: "close", gateCode: "G0" })).status !== 200) throw new Error("No se pudo cerrar G0.");
   const review = await gestor.get(`${endpoint}/requirements/R01`);
   for (const requirement of review.json.requirements.filter((item) => /^R0[1-9]$/.test(item.requirement_code))) {

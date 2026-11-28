@@ -14,6 +14,7 @@ const dataDirSnapshots = `${dataDir}-snapshots`;
 const demoDocsDir = fs.mkdtempSync(path.join(os.tmpdir(), "conecta-a5-docs-"));
 const screenshotDir = path.resolve(process.env.CAPTURAS_DIR?.trim() || path.join(root, "docs", "reporte", "capturas"));
 const demoPassword = "ConectaLocal-2026!";
+const privacyVersion = "0.1-borrador";
 const env = {
   ...process.env,
   APP_MODE: "local",
@@ -46,6 +47,7 @@ function must(name, response, expected) {
 }
 class Session {
   cookies = {};
+  browserSession = null;
   async request(method, url, body) {
     const headers = { origin: base };
     const cookie = Object.entries(this.cookies).map(([name, value]) => `${name}=${value}`).join("; ");
@@ -61,6 +63,9 @@ class Session {
     const text = await response.text();
     let json;
     try { json = JSON.parse(text); } catch { throw new Error(`Respuesta no JSON: HTTP ${response.status}`); }
+    if (method === "POST" && ["/api/auth/login", "/api/auth/mfa/verify"].includes(url) && json.name && json.role) {
+      this.browserSession = { name: json.name, role: json.role };
+    }
     return { status: response.status, json };
   }
   get(url) { return this.request("GET", url); }
@@ -126,6 +131,11 @@ async function captureScreenshot(session, route, filename, options = {}) {
   await context.addInitScript((dark) => {
     localStorage.setItem("conecta-prefs", JSON.stringify({ dark, lang: "es" }));
   }, options.dark === true);
+  if (session?.browserSession) {
+    await context.addInitScript((value) => {
+      localStorage.setItem("conecta-session", JSON.stringify(value));
+    }, session.browserSession);
+  }
   if (session) {
     await context.addCookies(Object.entries(session.cookies).map(([name, value]) => ({ name, value, url: base })));
   }
@@ -134,6 +144,9 @@ async function captureScreenshot(session, route, filename, options = {}) {
     const response = await page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(500);
     if (!response?.ok()) throw new Error(`Captura ${filename}: ${route} respondió HTTP ${response?.status() ?? "sin respuesta"}.`);
+    if (session?.browserSession) {
+      await page.locator("aside").getByText(session.browserSession.name, { exact: true }).waitFor({ state: "visible", timeout: 5000 });
+    }
     if (options.openPreferences) {
       await page.getByRole("button", { name: "Configuración" }).click();
       await page.waitForTimeout(100);
@@ -167,6 +180,12 @@ async function captureScreenshot(session, route, filename, options = {}) {
     if (await headerParagraphs.count() > 1) await headerParagraphs.nth(1).evaluate((element) => element.remove());
     const visibleText = await page.locator("body").innerText();
     const html = await page.content();
+    for (const requiredText of options.requiredText ?? []) {
+      if (!visibleText.includes(requiredText)) throw new Error(`Captura ${filename}: falta "${requiredText}".`);
+    }
+    if (options.forbiddenText && visibleText.includes(options.forbiddenText)) {
+      throw new Error(`Captura ${filename}: contiene el texto prohibido "${options.forbiddenText}".`);
+    }
     const forbidden = [
       demoPassword,
       env.MFA_ENCRYPTION_KEY,
@@ -237,7 +256,7 @@ try {
   const evidence = (endpoint, type, extra = {}, subgate) => gestor.post(`${endpoint}/documents`, form({ eventType: type, eventDate: "2026-11-27", description: labels[type], ...extra }, type, subgate));
 
   async function prepararG3(endpoint, snapshotName) {
-    must("cliente acepta privacidad", await cliente.post(`${endpoint}/privacy`, { version: "aviso-privacidad-v1" }), 200);
+    must("cliente acepta privacidad", await cliente.post(`${endpoint}/privacy`, { version: privacyVersion }), 200);
     must("cerrar G0", await close(gestor, endpoint, "G0"), 200);
     if (snapshotName) execFileSync(process.execPath, [tsx, "scripts/demo-snapshot.ts", "save", snapshotName], { cwd: root, env, stdio: "pipe" });
     const current = must("consultar captura", await cliente.get(endpoint), 200).expediente;
@@ -331,6 +350,11 @@ try {
   await captureScreenshot(cliente, "/portal/formatos", "06-portal-documentos-observacion.png");
   await captureScreenshot(gestor, "/gestor", "11-revision-validacion-requisitos.png", { selectFolio: newExp.folio, selectGate: "G1", scrollToText: "Revisión del expediente" });
   await captureScreenshot(gestor, "/gestor", "22-reproceso-cfe-semaforo.png", { selectFolio: newExp.folio, selectGate: "G1", scrollToText: "Reproceso CFE" });
+  await captureScreenshot(cliente, "/portal/formatos", "22b-reproceso-cfe-cliente.png", {
+    scrollToText: "Actualizar recibo",
+    requiredText: ["Actualizar recibo", "🔴 Observado", "Le toca a"],
+    forbiddenText: "Nota interna",
+  });
   ok("reproceso reabre G1 y bloquea G2–G7", reproceso.gates.find((gate) => gate.gate_code === "G1")?.status === "abierto" && reproceso.gates.filter((gate) => gate.gate_code >= "G2").every((gate) => gate.status === "bloqueado"));
   ok("solo R09 y R03 quedan observados", reproceso.requirements.filter((item) => /^R\d{2}$/.test(item.requirement_code)).length === 11 && reproceso.requirements.filter((item) => item.status === "observado").map((item) => item.requirement_code).join(",") === "R03,R09");
   ok("R01 y R07 conservan firmas y R02 su validación", ["R01", "R07"].every((code) => reproceso.requirements.find((item) => item.requirement_code === code)?.status === "escaneo_verificado_idc") && reproceso.requirements.find((item) => item.requirement_code === "R02")?.status === "validado_idc");
@@ -423,7 +447,7 @@ try {
     await captureScreenshot(admin, "/admin/accesos", "18-admin-bitacora.png");
     await captureScreenshot(admin, "/admin/integraciones", "19-admin-integraciones-zoho.png", { screenshotHeading: "Así se vería en Zoho Projects" });
     await captureScreenshot(admin, "/admin", "21-admin-inicio-seguridad.png");
-    ok("npm run capturas produce las 22 imágenes solicitadas", captureCount === 22, `capturas=${captureCount}`);
+    ok("npm run capturas produce las 23 imágenes solicitadas", captureCount === 23, `capturas=${captureCount}`);
   }
 } finally {
   await browser?.close();

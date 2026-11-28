@@ -44,7 +44,7 @@ try {
   console.log("expediente", exp.folio, "responsable", exp.gestor_id ? "sí" : "NO");
 
   console.log("== G0");
-  ok("privacidad: cliente acepta", (await cli.post(`${E}/privacy`, { version: "aviso-privacidad-v1" })).status === 200);
+  ok("privacidad: cliente acepta", (await cli.post(`${E}/privacy`, { version: "0.1-borrador" })).status === 200);
   const c0 = await g1.post(`${E}/gates`, { action: "close", gateCode: "G0" });
   ok("G0 cierra → 200", c0.status === 200, c0.text);
 

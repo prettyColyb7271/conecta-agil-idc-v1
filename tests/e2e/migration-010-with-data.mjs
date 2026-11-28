@@ -224,7 +224,7 @@ try {
   database = undefined;
 
   ok("la migración 010 preserva las filas de todas las demás tablas y los campos del evento", preserved && auditFieldsPreserved);
-  ok("la migración 010 aplica las reglas de correo, IP y user-agent; schemaVersion llega a 10", metadataCorrect && schemaVersion === 10 && hasMigration);
+  ok("la migración 010 aplica las reglas de correo, IP y user-agent; schemaVersion llega a 11", metadataCorrect && schemaVersion === 11 && hasMigration);
   ok("la segunda ejecución de db:migrate deja iguales los metadatos minimizados", idempotent);
 } catch (error) {
   console.error("Error en migration-010-with-data:", error instanceof Error ? error.message : "fallo desconocido");

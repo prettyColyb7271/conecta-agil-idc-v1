@@ -67,7 +67,7 @@ if (mfaSetup.json?.secret) {
 }
 const mkClient = async (tag) => {
   const s = new S(); const email = `e2e.${tag}.${ts}@example.invalid`; const pw = "E2e-Prueba-2026!";
-  await s.post("/api/auth/register", { email, password: pw, displayName: `E2E ${tag}` });
+  await s.post("/api/auth/register", { email, password: pw, displayName: `E2E ${tag}`, privacyAccepted: true, privacyVersion: "0.1-borrador" });
   const reqs = (await coord.get("/api/coordinator/requests")).json?.requests ?? [];
   const r = reqs.find((x) => x.email === email);
   await coord.post("/api/coordinator/requests", { requestId: r?.id, action: "approve" });

@@ -45,7 +45,7 @@ try {
   const expA = (await A.req("GET", "/api/expedientes")).json.expedientes[0];
   // cliente B con expediente propio
   const Bc = new S(); const eb = "sup.b@example.invalid", pb = "Supervisor-B-2026!";
-  await Bc.req("POST", "/api/auth/register", { json: { email: eb, password: pb, displayName: "Sup B" } });
+  await Bc.req("POST", "/api/auth/register", { json: { email: eb, password: pb, displayName: "Sup B", privacyAccepted: true, privacyVersion: "0.1-borrador" } });
   const rq = (await idc.req("GET", "/api/coordinator/requests")).json.requests.find((r) => r.email === eb);
   await idc.req("POST", "/api/coordinator/requests", { json: { requestId: rq.id, action: "approve" } });
   await Bc.login(eb, pb);

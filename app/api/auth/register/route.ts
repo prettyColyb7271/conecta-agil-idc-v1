@@ -5,12 +5,16 @@ import { assertSameOrigin, auditEvent, hashPassword } from "@/lib/auth";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
 import { sendEmail } from "@/lib/email";
+import { AVISO_VERSION } from "@/lib/privacidad";
 
 export async function POST(request: Request) {
   if (getAppMode() !== "local") return NextResponse.json({ error: "El registro local no está activo en modo demo." }, { status: 404 });
   try {
     assertSameOrigin(request);
-    const body = await readJson<{ email?: string; password?: string; displayName?: string }>(request);
+    const body = await readJson<{ email?: string; password?: string; displayName?: string; privacyAccepted?: boolean; privacyVersion?: string }>(request);
+    if (body.privacyAccepted !== true || body.privacyVersion !== AVISO_VERSION) {
+      return NextResponse.json({ error: "Debes aceptar la versión vigente del aviso de privacidad." }, { status: 400 });
+    }
     const email = body.email?.trim().toLowerCase() ?? "";
     const displayName = body.displayName?.trim() ?? "";
     const password = body.password ?? "";
@@ -27,8 +31,8 @@ export async function POST(request: Request) {
         "INSERT INTO users (id, email, display_name, role, status, password_hash, created_at, updated_at) VALUES (?, ?, ?, 'cliente', 'pendiente', ?, ?, ?)",
       ).run(userId, email, displayName, hashPassword(password), now, now);
       database.prepare(
-        "INSERT INTO account_requests (id, email, display_name, status, user_id, requested_role, created_at) VALUES (?, ?, ?, 'pendiente', ?, 'cliente', ?)",
-      ).run(crypto.randomUUID(), email, displayName, userId, now);
+        "INSERT INTO account_requests (id, email, display_name, status, user_id, requested_role, created_at, privacy_notice_version) VALUES (?, ?, ?, 'pendiente', ?, 'cliente', ?, ?)",
+      ).run(crypto.randomUUID(), email, displayName, userId, now, AVISO_VERSION);
       auditEvent({ actorId: userId, actorRole: "cliente", eventType: "registro", entityType: "user", entityId: userId });
       await sendEmail({
         to: email,

@@ -5,6 +5,7 @@ import { useState } from "react";
 import AuthShell, { inputCls } from "@/components/AuthShell";
 import { usePrefs } from "@/components/prefs";
 import { CORREO_SOLICITUDES } from "@/data/mock";
+import { AVISO_VERSION } from "@/lib/privacidad";
 
 const label = "mb-1 block text-center text-xs font-semibold";
 const LOCAL_MODE = process.env.NEXT_PUBLIC_MODO === "local";
@@ -21,6 +22,10 @@ export default function RegistroPage() {
       setError(t.mismatch);
       return;
     }
+    if (data.get("privacyAccepted") !== "on") {
+      setError("Debes leer y aceptar el aviso de privacidad para enviar tu solicitud.");
+      return;
+    }
     if (LOCAL_MODE) {
       void (async () => {
         const response = await fetch("/api/auth/register", {
@@ -30,6 +35,8 @@ export default function RegistroPage() {
             email: data.get("correo"),
             password: data.get("password"),
             displayName: `${data.get("nombres")} ${data.get("paterno")} ${data.get("materno")}`.trim(),
+            privacyAccepted: data.get("privacyAccepted") === "on",
+            privacyVersion: AVISO_VERSION,
           }),
         });
         const result = await response.json() as { error?: string };
@@ -118,6 +125,14 @@ export default function RegistroPage() {
             {t.notice} <u>{CORREO_SOLICITUDES}</u>
           </p>
         )}
+
+        <div className="space-y-1 text-center text-sm">
+          <label className="inline-flex items-start gap-2 text-left">
+            <input name="privacyAccepted" type="checkbox" required className="mt-1 h-4 w-4 shrink-0" />
+            <span>Leí el aviso de privacidad (versión {AVISO_VERSION}).</span>
+          </label>
+          <p><Link href="/privacidad" className="font-semibold underline">Leer el aviso de privacidad</Link></p>
+        </div>
 
         {error && <p className="text-center text-sm font-bold text-red-500" role="alert">{error}</p>}
         {sent && <p className="text-center text-sm font-bold" role="status">{t.sent}</p>}

@@ -5,6 +5,7 @@ import { getDatabase } from "@/lib/db/sqlite";
 import { auditEvent, withTransaction, type AuthUser } from "@/lib/auth";
 import { enqueueZohoOutbox } from "@/lib/zoho/outbox";
 import { scheduleZohoDelivery } from "@/lib/zoho/adapter";
+import { AVISO_VERSION } from "@/lib/privacidad";
 
 export type ScopeUser = Pick<AuthUser, "id" | "role">;
 export class ValidationError extends Error {
@@ -299,10 +300,11 @@ export function acceptPrivacy(user: ScopeUser, id: string, version: string) {
   const expediente = getExpediente(user, id);
   if (!expediente) throw new Error("NOT_FOUND");
   if (!version?.trim()) throw new ValidationError("La versión del aviso es obligatoria.");
+  if (version !== AVISO_VERSION) throw new ValidationError("La versión enviada del aviso ya no está vigente.");
   const now = new Date().toISOString();
-  getDatabase().prepare("UPDATE expedientes SET privacy_accepted_at = ?, privacy_accepted_version = ?, privacy_accepted_by = ?, updated_at = ? WHERE id = ?").run(now, version.trim(), user.id, now, id);
-  auditEvent({ actorId: user.id, actorRole: user.role, eventType: "aceptacion_aviso_privacidad", entityType: "expediente", entityId: id, expedienteId: id, metadata: { privacy_version: version.trim() } });
-  return { acceptedAt: now, version: version.trim() };
+  getDatabase().prepare("UPDATE expedientes SET privacy_accepted_at = ?, privacy_accepted_version = ?, privacy_accepted_by = ?, updated_at = ? WHERE id = ?").run(now, AVISO_VERSION, user.id, now, id);
+  auditEvent({ actorId: user.id, actorRole: user.role, eventType: "aceptacion_aviso_privacidad", entityType: "expediente", entityId: id, expedienteId: id, metadata: { privacy_version: AVISO_VERSION } });
+  return { acceptedAt: now, version: AVISO_VERSION };
 }
 
 export function createExpediente(user: ScopeUser, input: ExpedienteInput) {

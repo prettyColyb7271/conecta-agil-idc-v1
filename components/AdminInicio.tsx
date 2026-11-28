@@ -98,6 +98,14 @@ export default function AdminInicio({ data }: { data: AdminDashboardData }) {
           <Link className="mt-3 inline-flex rounded-md bg-[#5885b1] px-3 py-2 text-xs font-semibold text-white hover:bg-[#3d6a99]" href="/admin/integraciones">Ver Integraciones</Link>
         </Panel>
 
+        <Panel title="Aviso de privacidad">
+          <p className="text-sm font-semibold">Aviso de privacidad vigente: versión {data.privacyNotice.version} (borrador)</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <MetricCard label="Expedientes con versión vigente" value={data.privacyNotice.currentAccepted} />
+            <MetricCard label="Expedientes con versión anterior" value={data.privacyNotice.previousAccepted} />
+          </div>
+        </Panel>
+
         <Panel title="Alertas">
           {data.alerts.blockedResponsibles.length === 0 && data.alerts.failedOutbox === 0 ? (
             <EmptyState>Sin alertas activas.</EmptyState>

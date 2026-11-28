@@ -2,6 +2,7 @@ import "server-only";
 
 import { ROLE_LABEL, type Role } from "@/data/mock";
 import { getDatabase } from "@/lib/db/sqlite";
+import { AVISO_VERSION } from "@/lib/privacidad";
 
 export type AdminDashboardData = {
   example: boolean;
@@ -23,6 +24,7 @@ export type AdminDashboardData = {
     passwordLinks: number;
   };
   integrations: { pending: number; sent: number; failed: number; transport: "file" | "api" };
+  privacyNotice: { version: string; currentAccepted: number; previousAccepted: number };
   alerts: { blockedResponsibles: string[]; failedOutbox: number };
 };
 
@@ -94,6 +96,12 @@ export function getAdminDashboardData(): AdminDashboardData {
     ORDER BY e.folio
     LIMIT 100
   `).all() as Array<{ folio: string }>;
+  const privacyCounts = database.prepare(`
+    SELECT
+      SUM(CASE WHEN privacy_accepted_version = ? THEN 1 ELSE 0 END) AS current_accepted,
+      SUM(CASE WHEN privacy_accepted_version IS NOT NULL AND privacy_accepted_version <> ? THEN 1 ELSE 0 END) AS previous_accepted
+    FROM expedientes
+  `).get(AVISO_VERSION, AVISO_VERSION) as { current_accepted: number | null; previous_accepted: number | null };
 
   const configuredTransport = process.env.ZOHO_TRANSPORT?.trim().toLowerCase() || "file";
   if (configuredTransport !== "file" && configuredTransport !== "api") {
@@ -128,6 +136,11 @@ export function getAdminDashboardData(): AdminDashboardData {
       failed: outbox.get("fallido") ?? 0,
       transport: configuredTransport,
     },
+    privacyNotice: {
+      version: AVISO_VERSION,
+      currentAccepted: Number(privacyCounts.current_accepted ?? 0),
+      previousAccepted: Number(privacyCounts.previous_accepted ?? 0),
+    },
     alerts: {
       blockedResponsibles: blockedResponsibles.map((row) => row.folio),
       failedOutbox: outbox.get("fallido") ?? 0,
@@ -157,6 +170,7 @@ export function getDemoAdminDashboardData(): AdminDashboardData {
     },
     activity: { loginsOk: 8, loginsFailed: 1, blocks: 1, mfaFailed: 0, mfaDecryptFailed: 0, passwordLinks: 2 },
     integrations: { pending: 1, sent: 4, failed: 0, transport: "file" },
+    privacyNotice: { version: AVISO_VERSION, currentAccepted: 1, previousAccepted: 0 },
     alerts: { blockedResponsibles: ["IDC-DEMO-0001"], failedOutbox: 0 },
   };
 }

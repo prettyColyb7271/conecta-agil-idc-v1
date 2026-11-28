@@ -2,7 +2,7 @@ import type { TableName } from "@/lib/adapters/types";
 
 export const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   users: ["id", "email", "display_name", "role", "status", "password_hash", "email_verified_at", "created_at", "updated_at", "last_login_at"],
-  account_requests: ["id", "email", "display_name", "status", "reviewed_by", "reviewed_at", "reason", "created_at", "user_id", "requested_role"],
+  account_requests: ["id", "email", "display_name", "status", "reviewed_by", "reviewed_at", "reason", "created_at", "user_id", "requested_role", "privacy_notice_version"],
   sessions: ["id", "user_id", "session_token_hash", "expires_at", "revoked_at", "created_at", "last_seen_at"],
   expedientes: ["id", "folio", "tramite", "nivel_tension", "habilitado", "cliente_id", "gestor_id", "coordinador_id", "status", "data_json", "privacy_accepted_at", "privacy_accepted_version", "privacy_accepted_by", "created_at", "updated_at"],
   expediente_assignments: ["id", "expediente_id", "user_id", "assignment_type", "assigned_by", "starts_at", "ends_at", "created_at"],

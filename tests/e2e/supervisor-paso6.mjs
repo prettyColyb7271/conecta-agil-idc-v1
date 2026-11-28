@@ -46,7 +46,7 @@ if (expediente) {
   ok("G0 sin aviso de privacidad → 409", beforePrivacy.status === 409 && /privacidad/i.test(beforePrivacy.json?.error ?? ""));
   const client = new Session();
   await client.request("POST", "/api/auth/login", { email: "cliente.demo@example.invalid", password: "ConectaLocal-2026!" });
-  const privacy = await client.request("POST", `/api/expedientes/${expediente.id}/privacy`, { version: "aviso-privacidad-v1" });
+  const privacy = await client.request("POST", `/api/expedientes/${expediente.id}/privacy`, { version: "0.1-borrador" });
   ok("cliente acepta aviso de privacidad", privacy.status === 200, `${privacy.status} ${privacy.text}`);
   const afterPrivacy = await gestor.request("POST", `/api/expedientes/${expediente.id}/gates`, { action: "close", gateCode: "G0" });
   ok("G0 con aviso aceptado → 200", afterPrivacy.status === 200, `${afterPrivacy.status} ${afterPrivacy.text}`);

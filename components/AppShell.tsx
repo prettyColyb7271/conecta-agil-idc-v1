@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useSyncExternalStore } from "react";
 import { ROLE_LABEL, Role } from "@/data/mock";
 import { clearSession, useSession } from "@/lib/session";
-import { usePrefs } from "@/components/prefs";
 import NotificationsBell from "@/components/NotificationsBell";
 
 const NAV: Record<Role, { href: string; label: string }[]> = {
@@ -58,7 +57,6 @@ export default function AppShell({ role, children, navigationDisabled = false }:
   const pathname = usePathname();
   const session = useSession();
   const now = useClock();
-  const { dark } = usePrefs();
   const localMode = process.env.NEXT_PUBLIC_MODO === "local";
 
   // Protección DEMO: sin sesión (o con otro rol) regresa al login
@@ -72,7 +70,7 @@ export default function AppShell({ role, children, navigationDisabled = false }:
       {/* Encabezado */}
       <header className="flex items-center justify-between gap-4 bg-[#0d1f33] px-4 py-2 text-white">
         <div className="px-2 py-1">
-          <Image src={dark ? "/logo_blanco_1.png" : "/logo_negro.png"} alt="IDC Sistemas Eléctricos" width={384} height={183} className="h-8 w-auto" priority />
+          <Image src="/logo_blanco_1.png" alt="IDC Sistemas Eléctricos" width={384} height={183} className="h-8 w-auto" priority />
         </div>
         <div className="text-right text-[11px] leading-tight md:text-xs">
           <p className="font-bold">{now ? formatNow(now) : "\u00A0"}</p>
@@ -116,6 +114,9 @@ export default function AppShell({ role, children, navigationDisabled = false }:
               );
             })}
           </nav>
+          {role === "cliente" && (
+            <Link href="/privacidad" className="mt-2 text-sm font-semibold underline md:mt-auto">Aviso de privacidad</Link>
+          )}
           {navigationDisabled && <p className="text-xs text-amber-100">Primero vincula OneAuth</p>}
 
           <button

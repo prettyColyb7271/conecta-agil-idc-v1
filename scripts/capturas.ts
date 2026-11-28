@@ -27,6 +27,7 @@ const names = [
   "20-portal-cliente-movil.png",
   "21-admin-inicio-seguridad.png",
   "22-reproceso-cfe-semaforo.png",
+  "22b-reproceso-cfe-cliente.png",
 ];
 const env = {
   ...process.env,

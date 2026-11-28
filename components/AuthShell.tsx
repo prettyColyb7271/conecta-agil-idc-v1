@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState, ReactNode } from "react";
 import { usePrefs, Lang } from "./prefs";
 
@@ -118,6 +119,9 @@ export default function AuthShell({ children, logo = "/logo_blanco_1.png" }: { c
         {/* Derecha: formulario */}
         <section className={`flex flex-col items-center ${rightText}`}>{children}</section>
       </div>
+      <footer className="pb-4 text-center text-sm">
+        <Link href="/privacidad" className="font-semibold underline">Aviso de privacidad</Link>
+      </footer>
     </main>
   );
 }
