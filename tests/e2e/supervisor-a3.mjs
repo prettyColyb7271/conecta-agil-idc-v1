@@ -83,7 +83,12 @@ try {
 
   const endpoint = `/api/expedientes/${expediente.id}`;
   const managerPage = await gestor.get("/gestor");
+  const projectsPage = await gestor.get("/gestor/proyectos");
   const clientPage = await cliente.get("/portal");
+  const visiblePageHtml = (page) => page.text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  const visibleGateCode = /\bG[0-7]\b/;
+  ok("la interfaz no muestra códigos G0–G7 sin traducir", [managerPage, projectsPage, clientPage]
+    .every((page) => page.status === 200 && !visibleGateCode.test(visiblePageHtml(page))));
   const fechaLimite = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(expires);
   const redBanner = (html) => html.includes("vence en 5 días") &&
     /role="alert" class="[^"]*border-red-500 bg-red-50 text-red-900/.test(html);

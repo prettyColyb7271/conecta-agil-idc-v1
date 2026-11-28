@@ -66,7 +66,7 @@ export default function LocalDocumentos({ expediente, review, formats }: Props) 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm">
             <b>Portal en CFE.</b>
-            <span className="block text-xs text-slate-600">El gestor ve a un lado los datos del expediente para copiarlos o adjuntarlos.</span>
+            <span className="block text-xs text-slate-600">IDC presenta tu trámite ante CFE; aquí verás su avance.</span>
           </p>
           <a href={CFE_PORTAL_URL} target="_blank" rel="noopener noreferrer" className="rounded bg-[#5885b1] px-3 py-1 text-xs font-semibold text-white hover:bg-[#3d6a99]">Ir</a>
         </div>
@@ -117,7 +117,8 @@ export default function LocalDocumentos({ expediente, review, formats }: Props) 
         </div>
         {aviso && <p role={aviso.ok ? "status" : "alert"} className={`mt-2 text-sm font-bold ${aviso.ok ? "text-emerald-800" : "text-red-700"}`}>{aviso.text}</p>}
         <p className="mt-2 text-xs text-slate-600">
-          Se suben una sola vez: {reutilizados} documentos de la inspección UIIE se toman de este expediente y no se vuelven a pedir. PDF, JPG o PNG de hasta {MAX_MB} MB.
+          {reutilizados > 0 && <>Se suben una sola vez: {reutilizados} documentos de la inspección UIIE se toman de este expediente; no se te volverán a pedir. </>}
+          PDF, JPG o PNG de hasta {MAX_MB} MB.
         </p>
       </Panel>
 

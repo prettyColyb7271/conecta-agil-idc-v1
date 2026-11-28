@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Panel } from "@/components/ui";
-import { TRAMITE_FV_MT, TRAMITE_FV_MT_LABEL, etapaNombre } from "@/lib/etapas";
+import { TRAMITE_FV_MT, TRAMITE_FV_MT_LABEL } from "@/lib/etapas";
+import { etiquetaGate } from "@/lib/gate-display";
 
 type Option = { id: string; display_name: string; email: string };
 type Expediente = {
@@ -82,7 +83,7 @@ export default function AltaProyecto() {
           <article key={e.id} className="rounded border border-[#8da9c5] bg-white p-3 text-sm text-[#0d1f33]">
             <div className="flex flex-wrap justify-between gap-2"><b>{e.folio}</b><span>{e.tramite === TRAMITE_FV_MT ? TRAMITE_FV_MT_LABEL : e.tramite} · {e.status}</span></div>
             <p>Cliente: {e.cliente_nombre} · Responsable IDC: {e.gestor_nombre ?? "Sin asignar"}</p>
-            <p>Etapa actual: {(() => { const code = e.gates.find((g) => g.status === "abierto")?.gate_code ?? e.gates.find((g) => g.status === "pendiente")?.gate_code; return code ? `${code} · ${etapaNombre(code)}` : "—"; })()}</p>
+            <p>Etapa actual: {(() => { const code = e.gates.find((g) => g.status === "abierto")?.gate_code ?? e.gates.find((g) => g.status === "pendiente")?.gate_code; return code ? etiquetaGate(code) : "—"; })()}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2"><select className={inputCls} value={e.gestor_id ?? ""} onChange={(event) => { if (event.target.value) void assign(e.id, event.target.value); }}><option value="">Reasignar Responsable IDC</option>{responsables.map((g) => <option key={g.id} value={g.id}>{g.display_name}</option>)}</select></div>
             <details className="mt-2"><summary className="cursor-pointer font-semibold">Historial de responsables IDC</summary>{e.assignments.map((a, index) => <p key={`${a.display_name}-${index}`} className="text-xs">{a.assignment_type === "coordinador_idc" ? "Responsable IDC" : a.assignment_type}: {a.display_name} · {a.ends_at ? `hasta ${a.ends_at}` : "vigente"}</p>)}</details>
           </article>
