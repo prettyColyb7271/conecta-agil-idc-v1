@@ -22,3 +22,17 @@ export function formatoFecha(fecha: string | Date): string {
     timeZone: "UTC",
   }).format(date);
 }
+
+export function formatoFechaHora(fecha: string | Date): string {
+  const date = fecha instanceof Date ? fecha : new Date(fecha);
+  if (!Number.isFinite(date.getTime())) throw new RangeError("La fecha no es válida.");
+  const values = Object.fromEntries(new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date).map(({ type, value }) => [type, value]));
+  return `${values.day}/${values.month}/${values.year} ${values.hour}:${values.minute}`;
+}

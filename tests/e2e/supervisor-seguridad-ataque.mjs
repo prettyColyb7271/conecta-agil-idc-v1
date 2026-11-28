@@ -97,8 +97,12 @@ try {
   console.log("== bitácora");
   await new S().login("nadie.existe@example.invalid", "MalaClave-123");
   const ev = await a2.get("/api/admin/access");
-  const evText = JSON.stringify(ev.json?.events ?? []);
-  ok("login fallido aparece con el correo intentado", evText.includes("nadie.existe@example.invalid"));
+  const auditEvents = ev.json?.events ?? [];
+  const evText = JSON.stringify(auditEvents);
+  ok(
+    "login fallido aparece sin exponer el correo intentado",
+    auditEvents.some((event) => event.eventType === "login_fallido") && !evText.includes("nadie.existe@example.invalid"),
+  );
   ok("desvinculación MFA aparece en bitácora", /mfa/i.test(evText) && /desvinc|disable|revoc/i.test(evText));
   ok("cliente → 403 en bitácora", (await (async () => { const c = new S(); await c.login("cliente.demo@example.invalid"); return (await c.get("/api/admin/access")).status; })()) === 403);
   ok("Gestor IDC → 403 en bitácora", (await g3.get("/api/admin/access")).status === 403);
