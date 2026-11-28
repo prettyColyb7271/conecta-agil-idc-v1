@@ -22,7 +22,6 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [mfaPending, setMfaPending] = useState(false);
-  const [recoveryMessage, setRecoveryMessage] = useState("");
 
   return (
     <AuthShell logo="/logo_blanco.png">
@@ -103,14 +102,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs">{LOCAL_MODE ? "La cuenta debe ser aprobada por el coordinador IDC." : t.demoHint}</p>
-        {LOCAL_MODE && !mfaPending && <button type="button" className="text-xs font-semibold underline" onClick={async () => {
-          const email = window.prompt("Correo de la cuenta cliente:");
-          if (!email) return;
-          const response = await fetch("/api/auth/recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "request", email }) });
-          const data = await response.json() as { message?: string; error?: string };
-          setRecoveryMessage(data.message ?? data.error ?? "Solicitud registrada.");
-        }}>¿Olvidaste tu contraseña?</button>}
-        {recoveryMessage && <p className="text-center text-xs font-semibold">{recoveryMessage}</p>}
+        {LOCAL_MODE && !mfaPending && <Link href="/recuperar" className="text-center text-xs font-semibold underline">¿Olvidaste tu contraseña?</Link>}
       </form>
     </AuthShell>
   );

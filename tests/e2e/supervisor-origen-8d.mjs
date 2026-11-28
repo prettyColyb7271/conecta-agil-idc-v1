@@ -141,7 +141,7 @@ try {
   check("código MFA incorrecto no crea sesión", (await managerLogin.post("/api/auth/mfa/verify", { code: "incorrecto" })).status === 401 && !managerLogin.jar.has("conecta-session"));
   check("código de respaldo completa MFA opcional", (await managerLogin.post("/api/auth/mfa/verify", { code: managerBackups[0] })).status === 200 && managerLogin.jar.has("conecta-session"));
   const users = (await admin.get("/api/admin/users")).json.users;
-  const managerId = users.find((user) => user.email === "coordinador.demo@example.invalid").id;
+  const managerId = users.find((user) => user.role === "coordinador_idc" && user.responsible_count > 0).id;
   for (const reason of ["", "  abc  ", "    ", "🔥🔥"]) {
     check("motivo vacío o corto rechazado", (await admin.post("/api/admin/users", { action: "disable_mfa", userId: managerId, reason })).status === 400);
   }
@@ -152,7 +152,7 @@ try {
 
   const managerAgain = new Session();
   assert.equal((await managerAgain.login("coordinador.demo@example.invalid")).status, 200);
-  const clientId = users.find((user) => user.email === "cliente.demo@example.invalid").id;
+  const clientId = users.find((user) => user.role === "cliente" && user.display_name === "Cliente Demo Ficticio").id;
   const generate = async () => {
     const response = await managerAgain.post("/api/auth/recovery", { action: "generate", userId: clientId });
     assert.equal(response.status, 200);

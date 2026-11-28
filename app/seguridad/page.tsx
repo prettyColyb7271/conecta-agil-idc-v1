@@ -1,45 +1,28 @@
 import AppShell from "@/components/AppShell";
 import MfaSetup from "@/components/MfaSetup";
-import { EmptyState, MessageBox, MetricCard, PageHeading, Panel, StatusBadge } from "@/components/ui";
-import { mfaEnabled, mfaRequiredForRole, requireRole } from "@/lib/auth";
+import DemoSecurity from "@/components/DemoSecurity";
+import { MessageBox, PageHeading } from "@/components/ui";
+import { getCurrentUser, mfaEnabled, mfaRequiredForRole } from "@/lib/auth";
 import { getAppMode } from "@/lib/adapters/config";
 import { connection } from "next/server";
+import { redirect } from "next/navigation";
 
 export const instant = false;
 
 export default async function SeguridadPage() {
   await connection();
-  const user = await requireRole("admin_seguridad", { allowMfaSetup: true });
-  const navigationDisabled = Boolean(user && mfaRequiredForRole(user.role) && !mfaEnabled(user.id));
   if (getAppMode() === "demo") {
-    return (
-      <AppShell role="admin_seguridad">
-        <div className="space-y-4">
-          <PageHeading
-            title="Seguridad de la cuenta"
-            description="Panel demostrativo; no consulta ni modifica la base local."
-            badge={<StatusBadge tone="info">Ejemplo</StatusBadge>}
-          />
-          <Panel title="Estado de autenticación">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <MetricCard label="Cuentas con MFA activo" value="1" detail="Dato demostrativo" />
-              <MetricCard label="Roles con MFA obligatorio" value="1" detail="Administración de seguridad" />
-            </div>
-            <MessageBox tone="warning">No se muestra ningún QR, secreto ni código de respaldo en el modo demo.</MessageBox>
-          </Panel>
-          <Panel title="Sincronización">
-            <EmptyState>Los cambios de acceso se administran localmente y no se sincronizan con Zoho.</EmptyState>
-          </Panel>
-          <MessageBox tone="warning">No proyectes esta pantalla: el QR y los códigos dan acceso a la cuenta.</MessageBox>
-        </div>
-      </AppShell>
-    );
+    return <DemoSecurity />;
   }
+  const user = await getCurrentUser();
+  if (!user) redirect("/api/auth/clear?next=/");
+  if (user.mustChangePassword) redirect("/cambiar-contrasena");
+  const navigationDisabled = mfaRequiredForRole(user.role) && !mfaEnabled(user.id);
   return (
-    <AppShell role="admin_seguridad" navigationDisabled={navigationDisabled}>
+    <AppShell role={user.role} navigationDisabled={navigationDisabled}>
       <div className="space-y-4">
-        <PageHeading title="Seguridad de la cuenta" description="Administra la vinculación MFA de esta cuenta." />
-        <MfaSetup />
+        <PageHeading title="Mi seguridad" description="Administra la protección de acceso de tu cuenta." />
+        <MfaSetup required={mfaRequiredForRole(user.role)} />
         <MessageBox>Los eventos de seguridad se registran en la bitácora administrativa sin guardar secretos de autenticación.</MessageBox>
       </div>
     </AppShell>

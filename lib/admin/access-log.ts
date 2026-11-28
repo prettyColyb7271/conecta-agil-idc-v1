@@ -11,10 +11,13 @@ export const AUDIT_EVENT_LABELS: Record<string, string> = {
   captura_datos: "Datos del expediente actualizados",
   cierre_expediente: "Expediente cerrado",
   cierre_gate: "Gate cerrado",
+  baja_cuenta: "Cuenta dada de baja",
   correccion_datos_materiales: "Datos materiales corregidos",
   definicion_contrasena_enlace: "Contraseña definida con enlace",
   descarga_documento: "Documento descargado",
   documento_cargado: "Documento recibido",
+  dato_contacto_revelado: "Dato de contacto revelado",
+  dato_contacto_actualizado: "Teléfono de cuenta actualizado",
   desbloqueo: "Cuenta desbloqueada",
   evidencia_externa_actualizada: "Evidencia externa actualizada",
   evidencia_externa_registrada: "Evidencia externa registrada",
@@ -50,8 +53,14 @@ export const AUDIT_EVENT_LABELS: Record<string, string> = {
   reasignacion_responsable: "Responsable reasignado",
   reasignacion_responsable_idc: "Responsable IDC reasignado",
   recuperacion_cliente_generada: "Enlace de recuperación emitido",
+  recuperacion_codigo_generado: "Código de recuperación emitido",
+  recuperacion_codigo_usado: "Código de recuperación utilizado",
+  recuperacion_codigo_vencido: "Código de recuperación vencido",
+  recuperacion_codigo_agotado: "Código de recuperación agotado",
+  recuperacion_limitada: "Solicitud de recuperación limitada",
   recuperacion_solicitada: "Recuperación solicitada",
   rechazo: "Solicitud rechazada",
+  reactivacion_cuenta: "Cuenta reactivada",
   reapertura_gate: "Gate reabierto",
   registro: "Cuenta registrada",
   requisito_no_aplica: "Requisito marcado como no aplica",
@@ -75,6 +84,8 @@ const SAFE_METADATA_FIELDS = {
   mfa: "MFA",
   requested: "Solicitud",
   revoked: "Sesión revocada",
+  field: "Dato de contacto",
+  limit: "Límite aplicado",
 } as const;
 
 export type SafeMetadataItem = { label: string; value: string };
@@ -105,6 +116,10 @@ export function sanitizeAuditMetadata(value: unknown): SafeMetadataItem[] {
       if (truncated) result.push({ label, value: truncated });
     } else if (typeof item === "boolean") {
       result.push({ label, value: item ? "Sí" : "No" });
+    } else if (key === "field" && typeof item === "string" && ["apellidos", "email", "telefono_contacto"].includes(item)) {
+      result.push({ label, value: item === "apellidos" ? "Apellidos" : item === "email" ? "Correo" : "Teléfono" });
+    } else if (key === "limit" && (item === "email" || item === "ip")) {
+      result.push({ label, value: item === "email" ? "Por correo" : "Por IP truncada" });
     } else if (key === "expedientes_sin_responsable_activo" && typeof item === "number" && Number.isSafeInteger(item) && item >= 0) {
       result.push({ label, value: String(item) });
     }

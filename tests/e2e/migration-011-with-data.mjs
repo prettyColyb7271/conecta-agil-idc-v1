@@ -26,7 +26,7 @@ const priorMigrations = [
   "001_inicial.sql", "002_catalogo_y_registro.sql", "003_contrasena_temporal.sql",
   "004_flujo_firma_privacidad.sql", "005_password_setup_tokens.sql", "006_plantillas_docx.sql",
   "007_paso7_eventos_externos.sql", "008_mfa_seguridad.sql", "009_outbox.sql",
-  "010_audit_events_privacidad.sql",
+  "010_audit_events_privacidad.sql", "012_a8b_contact_recovery_deactivation.sql",
 ];
 let pass = 0;
 let fail = 0;
@@ -81,7 +81,7 @@ try {
   const schemaVersion = Number(database.prepare("SELECT MAX(CAST(substr(filename, 1, 3) AS INTEGER)) AS version FROM schema_migrations").get().version);
   const migrationCount = Number(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE filename = '011_privacy_notice_registration.sql'").get().count);
   const newRequest = database.prepare("SELECT privacy_notice_version FROM account_requests WHERE id = 'request-current'").get();
-  ok("schemaVersion llega a 11 y registra la versión aceptada", schemaVersion === 11 && migrationCount === 1 && newRequest.privacy_notice_version === "0.1-borrador");
+  ok("schemaVersion llega a 12 y registra la versión aceptada", schemaVersion === 12 && migrationCount === 1 && newRequest.privacy_notice_version === "0.1-borrador");
   database.close();
   database = undefined;
 

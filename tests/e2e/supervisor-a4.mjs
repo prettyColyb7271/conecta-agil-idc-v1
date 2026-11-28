@@ -261,7 +261,7 @@ try {
   server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(port)], { cwd: root, env, stdio: "ignore" });
   await waitFor(async () => (await fetch(`${base}/api/health`).then((response) => response.ok).catch(() => false)), "No inició el servidor aislado A4.");
   const health = await fetch(`${base}/api/health`).then((response) => response.json());
-  ok("schemaVersion 11 activo en health", health.schemaVersion === 11, String(health.schemaVersion));
+  ok("schemaVersion 12 activo en health", health.schemaVersion === 12, String(health.schemaVersion));
 
   const client = await login("cliente.demo@example.invalid", seeded.password);
   const manager = await login("coordinador.demo@example.invalid", seeded.password);
@@ -433,7 +433,7 @@ try {
   const version = migratedDatabase.prepare("SELECT filename FROM schema_migrations ORDER BY filename DESC LIMIT 1").get()?.filename;
   const outboxMigration = migratedDatabase.prepare("SELECT filename FROM schema_migrations WHERE filename = '009_outbox.sql'").get();
   const outboxExists = migratedDatabase.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'outbox'").get();
-  ok("db:migrate restaura outbox en una base existente y conserva sus datos (schemaVersion 11)", version === "011_privacy_notice_registration.sql" && Boolean(outboxMigration) && Boolean(outboxExists) &&
+  ok("db:migrate restaura outbox en una base existente y conserva sus datos (schemaVersion 12)", version === "012_a8b_contact_recovery_deactivation.sql" && Boolean(outboxMigration) && Boolean(outboxExists) &&
     Number(migratedDatabase.prepare("SELECT COUNT(*) AS count FROM users").get().count) === usersBefore &&
     Number(migratedDatabase.prepare("SELECT COUNT(*) AS count FROM expedientes").get().count) === expedientesBefore);
   migratedDatabase.close();

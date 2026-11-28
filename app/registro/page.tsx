@@ -34,7 +34,10 @@ export default function RegistroPage() {
           body: JSON.stringify({
             email: data.get("correo"),
             password: data.get("password"),
-            displayName: `${data.get("nombres")} ${data.get("paterno")} ${data.get("materno")}`.trim(),
+            displayName: String(data.get("nombres") ?? "").trim(),
+            apellidos: `${data.get("paterno")} ${data.get("materno")}`.trim(),
+            telefono: data.get("celular"),
+            website: data.get("website"),
             privacyAccepted: data.get("privacyAccepted") === "on",
             privacyVersion: AVISO_VERSION,
           }),
@@ -57,6 +60,9 @@ export default function RegistroPage() {
     <AuthShell>
       <form onSubmit={onSubmit} className="w-full max-w-lg space-y-3">
         <h2 className="text-center text-4xl font-extrabold">{t.registerTitle}</h2>
+        <div className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
+          <label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>

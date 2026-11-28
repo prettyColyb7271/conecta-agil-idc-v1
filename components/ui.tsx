@@ -34,18 +34,20 @@ export function Dot({ tipo }: { tipo: Estatus | "urgente" }) {
   return <span className={`inline-block h-3 w-3 shrink-0 rounded-full ${c}`} aria-hidden />;
 }
 
-export function SmallButton({ children, onClick, active, disabled, type = "button" }: {
+export function SmallButton({ children, onClick, active, disabled, type = "button", "aria-label": ariaLabel }: {
   children: ReactNode;
   onClick?: () => void;
   active?: boolean;
   disabled?: boolean;
   type?: "button" | "submit";
+  "aria-label"?: string;
 }) {
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       className={`rounded-md px-3 py-2 text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${active ? "bg-[#0d1f33]" : "bg-[#5885b1] hover:bg-[#3d6a99]"}`}
     >
       {children}

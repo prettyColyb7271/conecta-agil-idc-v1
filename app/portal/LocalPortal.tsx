@@ -12,6 +12,7 @@ import AlertaVigenciaOficioBanner from "@/components/AlertaVigenciaOficio";
 import { traducirGateMensaje } from "@/lib/gate-display";
 import { formatoFecha } from "@/lib/fechas";
 import { AVISO_RESUMEN, AVISO_VERSION } from "@/lib/privacidad";
+import OptionalMfaPrompt from "@/components/OptionalMfaPrompt";
 
 type Props = {
   expediente: {
@@ -77,6 +78,7 @@ export default function LocalPortal({ expediente, review }: Props) {
   const alerta = alertaVigenciaOficio(expediente.gates, expediente.external_events ?? []);
   const extra = (
     <>
+      <OptionalMfaPrompt />
       {alerta && <AlertaVigenciaOficioBanner alerta={alerta} />}
       {requiereAviso && (
         <section className="space-y-3 rounded border border-amber-500 bg-amber-50 p-3 text-sm text-[#0d1f33]" aria-labelledby="privacy-consent-title">

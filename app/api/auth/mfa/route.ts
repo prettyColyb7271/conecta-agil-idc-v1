@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertSameOrigin, auditEvent, beginMfaSetup, confirmMfaSetup, disableUserMfa, getCurrentUser, mfaEnabled, verifyPassword, verifyUserMfa } from "@/lib/auth";
+import { assertSameOrigin, auditEvent, beginMfaSetup, confirmMfaSetup, disableUserMfa, getCurrentUser, mfaEnabled, mfaRequiredForRole, verifyPassword, verifyUserMfa } from "@/lib/auth";
 import { getAppMode } from "@/lib/adapters/config";
 import { getDatabase } from "@/lib/db/sqlite";
 import { readJson, RequestInputError } from "@/lib/http";
@@ -26,10 +26,12 @@ export async function POST(request: Request) {
     if (body.action === "confirm") {
       if (!body.code) return NextResponse.json({ error: "Código MFA requerido." }, { status: 400 });
       const backupCodes = confirmMfaSetup(user.id, body.code.trim());
+      getDatabase().prepare("UPDATE sessions SET mfa_recent_verified_at = ? WHERE id = ?").run(new Date().toISOString(), user.sessionId);
       auditEvent({ actorId: user.id, actorRole: user.role, eventType: "mfa_vinculado", entityType: "user_mfa", entityId: user.id });
       return NextResponse.json({ enabled: true, backupCodes });
     }
     if (body.action === "disable") {
+      if (mfaRequiredForRole(user.role)) return NextResponse.json({ error: "Tu rol requiere MFA y no puede desvincularlo." }, { status: 409 });
       if (!body.password || !body.code) return NextResponse.json({ error: "Contraseña y código MFA requeridos." }, { status: 400 });
       const row = getDatabase().prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id) as { password_hash: string } | undefined;
       if (!row || !verifyPassword(body.password, row.password_hash) || !verifyUserMfa(user.id, body.code.trim())) return NextResponse.json({ error: "No fue posible desvincular MFA." }, { status: 401 });

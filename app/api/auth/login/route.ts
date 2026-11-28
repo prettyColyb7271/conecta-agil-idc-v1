@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     }
 
     const user = getDatabase().prepare("SELECT id, email, display_name, role, status, password_hash, must_change_password FROM users WHERE email = ?").get(email) as {
-      id: string; email: string; display_name: string; role: Role; status: "pendiente" | "activo" | "bloqueado"; password_hash: string;
+      id: string; email: string; display_name: string; role: Role; status: "pendiente" | "activo" | "bloqueado" | "baja"; password_hash: string;
       must_change_password: number;
     } | undefined;
     const validPassword = user ? verifyPassword(password, user.password_hash) : false;
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     ).get(user.id);
     if (rejectedRequest) return NextResponse.json({ error: "Tu solicitud de cuenta no fue aprobada. Contacta a IDC." }, { status: 403 });
     if (user.status === "pendiente") return NextResponse.json({ error: "Tu cuenta está pendiente de aprobación." }, { status: 403 });
-    if (user.status === "bloqueado") return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 403 });
+    if (user.status !== "activo") return NextResponse.json({ error: "No fue posible iniciar sesión con esas credenciales." }, { status: 403 });
 
     failures.delete(email);
     if (mfaEnabled(user.id)) {

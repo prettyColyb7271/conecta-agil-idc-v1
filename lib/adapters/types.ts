@@ -21,6 +21,8 @@ export const TABLE_NAMES = [
   "mfa_backup_codes",
   "mfa_login_challenges",
   "password_recovery_requests",
+  "password_recovery_codes",
+  "recovery_rate_limits",
   "outbox",
 ] as const;
 

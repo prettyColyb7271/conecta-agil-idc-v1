@@ -5,24 +5,28 @@ import { Dot, EmptyState, MessageBox, MetricCard, PageHeading, Panel, SmallButto
 import { EstadoUsuario, ROLE_LABEL, Role, usuariosIniciales } from "@/data/mock";
 import { formatoFechaHora } from "@/lib/fechas";
 import RecoveryPanel from "@/components/RecoveryPanel";
+import ContactRevealGroup from "@/components/ContactRevealGroup";
 
 const GRUPOS: { rol: Role; titulo: string }[] = [
   { rol: "cliente", titulo: "Clientes" },
   { rol: "coordinador_idc", titulo: "Gestor IDC" },
 ];
-const DOT = { pendiente: "riesgo", activo: "entiempo", bloqueado: "atrasado" } as const;
-const LABEL: Record<EstadoUsuario, string> = { pendiente: "Pendiente de revisión", activo: "Activo", bloqueado: "Bloqueado" };
+const DOT = { pendiente: "riesgo", activo: "entiempo", bloqueado: "atrasado", baja: "atrasado" } as const;
+const LABEL: Record<EstadoUsuario, string> = { pendiente: "Pendiente de revisión", activo: "Activo", bloqueado: "Bloqueado", baja: "De baja" };
 
 type AdminUser = {
   id: string;
   email: string;
   display_name: string;
+  apellidos: string | null;
+  telefono_contacto: string | null;
   role: Role;
   status: EstadoUsuario;
   last_login_at: string | null;
   responsible_count: number;
   must_change_password: number;
   mfa_enabled: number;
+  is_self: boolean;
 };
 type RegistrationRequest = { id: string; email: string; display_name: string; requested_role: Role; created_at: string };
 type UserSummary = { active: number; blocked: number; mfaPending: number };
@@ -40,12 +44,15 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
   const [summary, setSummary] = useState<UserSummary | null>(null);
   const [search, setSearch] = useState("");
   const [requests, setRequests] = useState<RegistrationRequest[]>([]);
-  const [newManager, setNewManager] = useState({ displayName: "", email: "" });
+  const [newManager, setNewManager] = useState({ displayName: "", apellidos: "", email: "" });
   const [managerMessage, setManagerMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [setupUrl, setSetupUrl] = useState("");
   const [loading, setLoading] = useState(mode === "local" && Boolean(role));
   const [error, setError] = useState(mode === "local" && !role ? "No se pudo identificar la sesión administrativa." : "");
   const [success, setSuccess] = useState("");
+  const [deactivationTarget, setDeactivationTarget] = useState<AdminUser | null>(null);
+  const [deactivationReason, setDeactivationReason] = useState("");
+  const [reassignToId, setReassignToId] = useState("");
   const isLocal = mode === "local";
 
   useEffect(() => {
@@ -100,16 +107,17 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
     }
   }
 
-  async function change(userId: string, action: "block" | "unblock" | "revoke" | "reset_password" | "reset_client_password" | "disable_mfa") {
+  async function change(userId: string, action: "block" | "unblock" | "revoke" | "reset_password" | "reset_client_password" | "disable_mfa" | "deactivate" | "reactivate", reasonOverride?: string, reassignOverride?: string) {
     const reason = action === "disable_mfa" ? window.prompt("Motivo obligatorio para desvincular MFA:")?.trim() : undefined;
-    if (action === "disable_mfa" && !reason) return;
+    const reasonToSend = action === "deactivate" ? reasonOverride : reason;
+    if ((action === "disable_mfa" && !reason) || (action === "deactivate" && !reasonToSend)) return;
     setError("");
     setSuccess("");
     try {
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId, action, reason }),
+        body: JSON.stringify({ userId, action, reason: reasonToSend, reassignToId: reassignOverride }),
       });
       const data = await response.json() as { error?: string; setupUrl?: string; unassignedCount?: number };
       if (!response.ok) throw new Error(data.error ?? "No fue posible actualizar la cuenta.");
@@ -118,6 +126,13 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
         setSuccess("Enlace de definición generado. Entrégalo a la persona titular; vence en 24 horas y solo puede usarse una vez.");
       } else if (action === "block" && data.unassignedCount) {
         setSuccess(`${data.unassignedCount} expediente(s) quedó(aron) sin responsable activo; se notificó a los demás Gestores IDC.`);
+      } else if (action === "deactivate") {
+        setSuccess("Cuenta dada de baja; el historial y los expedientes se conservaron.");
+        setDeactivationTarget(null);
+        setDeactivationReason("");
+        setReassignToId("");
+      } else if (action === "reactivate") {
+        setSuccess("Cuenta reactivada.");
       } else {
         setSuccess("Cuenta actualizada.");
       }
@@ -135,11 +150,11 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "create_gestor", displayName: newManager.displayName, email: newManager.email }),
+        body: JSON.stringify({ action: "create_gestor", displayName: newManager.displayName, apellidos: newManager.apellidos, email: newManager.email }),
       });
       const data = await response.json() as { error?: string; setupUrl?: string };
       if (!response.ok) throw new Error(data.error ?? "No fue posible crear el Gestor IDC.");
-      setNewManager({ displayName: "", email: "" });
+      setNewManager({ displayName: "", apellidos: "", email: "" });
       setSetupUrl(data.setupUrl ?? "");
       setManagerMessage({ tone: "success", text: "Gestor IDC creado. Entrega el enlace de un solo uso; vence en 24 horas." });
       await refreshUsers();
@@ -177,7 +192,7 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
   if (isLocal && role === "admin_seguridad") {
     const normalizedSearch = search.trim().toLocaleLowerCase("es-MX");
     const filteredUsers = localUsers.filter((user) =>
-      `${user.display_name} ${user.email}`.toLocaleLowerCase("es-MX").includes(normalizedSearch),
+      `${user.display_name} ${user.apellidos ?? ""} ${user.email}`.toLocaleLowerCase("es-MX").includes(normalizedSearch),
     );
     return (
       <div className="space-y-4">
@@ -205,8 +220,11 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
         </Panel>
         <Panel title="Alta de Gestor IDC">
           <form onSubmit={createManager} className="grid gap-3 rounded-lg bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="text-sm font-semibold">Nombre completo
+            <label className="text-sm font-semibold">Nombre(s)
               <input required value={newManager.displayName} onChange={(event) => setNewManager({ ...newManager, displayName: event.target.value })} className="mt-1 w-full rounded border p-2 font-normal" />
+            </label>
+            <label className="text-sm font-semibold">Apellidos
+              <input value={newManager.apellidos} onChange={(event) => setNewManager({ ...newManager, apellidos: event.target.value })} className="mt-1 w-full rounded border p-2 font-normal" />
             </label>
             <label className="text-sm font-semibold">Correo
               <input required type="email" value={newManager.email} onChange={(event) => setNewManager({ ...newManager, email: event.target.value })} className="mt-1 w-full rounded border p-2 font-normal" />
@@ -226,21 +244,36 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="break-words font-bold">{user.display_name}</p>
-                      <p className="break-all text-xs text-slate-600">{user.email}</p>
+                      <ContactRevealGroup userId={user.id} values={[
+                        { field: "apellidos", label: "Apellidos", masked: user.apellidos ?? "No capturados" },
+                        { field: "email", label: "Correo", masked: user.email },
+                        { field: "telefono_contacto", label: "Teléfono", masked: user.telefono_contacto ?? "No capturado" },
+                      ]} />
                       <p className="mt-1 text-xs text-slate-600">
                         {ROLE_LABEL[user.role]} · Último acceso: {user.last_login_at ? formatoFechaHora(user.last_login_at) : "Nunca"} · Responsables: {user.responsible_count}
                       </p>
                     </div>
-                    <StatusBadge tone={user.status === "activo" ? "positive" : user.status === "bloqueado" ? "negative" : "warning"}>{LABEL[user.status]}</StatusBadge>
+                    <StatusBadge tone={user.status === "activo" ? "positive" : user.status === "bloqueado" ? "negative" : user.status === "baja" ? "neutral" : "warning"}>{LABEL[user.status]}</StatusBadge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {user.status === "bloqueado"
-                      ? <SmallButton onClick={() => void change(user.id, "unblock")}>Desbloquear</SmallButton>
-                      : <SmallButton onClick={() => void change(user.id, "block")}>Bloquear</SmallButton>}
-                    <SmallButton onClick={() => void change(user.id, "revoke")}>Revocar sesiones</SmallButton>
-                    {user.role === "coordinador_idc" && <SmallButton onClick={() => void change(user.id, "reset_password")}>Restablecer contraseña</SmallButton>}
-                    {user.role === "cliente" && <SmallButton onClick={() => void change(user.id, "reset_client_password")}>Generar recuperación</SmallButton>}
-                    {Boolean(user.mfa_enabled) && <SmallButton onClick={() => void change(user.id, "disable_mfa")}>Desvincular MFA</SmallButton>}
+                    {user.status === "baja"
+                      ? <SmallButton onClick={() => void change(user.id, "reactivate")}>Reactivar</SmallButton>
+                      : !user.is_self && <SmallButton onClick={() => {
+                        setDeactivationTarget(user);
+                        setDeactivationReason("");
+                        setReassignToId("");
+                      }}>Dar de baja</SmallButton>}
+                    {!user.is_self && user.role !== "admin_seguridad" && user.status !== "baja" && (
+                      <>
+                        {user.status === "bloqueado"
+                          ? <SmallButton onClick={() => void change(user.id, "unblock")}>Desbloquear</SmallButton>
+                          : <SmallButton onClick={() => void change(user.id, "block")}>Bloquear</SmallButton>}
+                        <SmallButton onClick={() => void change(user.id, "revoke")}>Revocar sesiones</SmallButton>
+                        {user.role === "coordinador_idc" && <SmallButton onClick={() => void change(user.id, "reset_password")}>Restablecer contraseña</SmallButton>}
+                        {user.role === "cliente" && <SmallButton onClick={() => void change(user.id, "reset_client_password")}>Generar recuperación</SmallButton>}
+                        {Boolean(user.mfa_enabled) && <SmallButton onClick={() => void change(user.id, "disable_mfa")}>Desvincular MFA</SmallButton>}
+                      </>
+                    )}
                     {user.must_change_password === 1 && <StatusBadge tone="warning">Debe definir contraseña</StatusBadge>}
                     <StatusBadge tone={user.mfa_enabled ? "positive" : "neutral"}>MFA: {user.mfa_enabled ? "Activo" : "No vinculado"}</StatusBadge>
                   </div>
@@ -249,6 +282,36 @@ export default function AdminUsuarios({ mode, role }: { mode: "demo" | "local"; 
             </ul>
           ) : <EmptyState>{search ? "No hay cuentas que coincidan con la búsqueda." : "No hay cuentas que mostrar."}</EmptyState>}
         </Panel>
+        {deactivationTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="deactivation-title">
+            <section className="w-full max-w-lg space-y-3 rounded-lg bg-white p-5 text-[#0d1f33] shadow-xl">
+              <h2 id="deactivation-title" className="text-lg font-bold">Dar de baja a {deactivationTarget.display_name}</h2>
+              <p className="text-sm">La cuenta no podrá iniciar sesión. El historial y los expedientes se conservan.</p>
+              {deactivationTarget.role === "coordinador_idc" && deactivationTarget.responsible_count > 0 && (
+                <label className="block text-sm font-semibold">Reasignar {deactivationTarget.responsible_count} expediente(s) activos a
+                  <select value={reassignToId} onChange={(event) => setReassignToId(event.target.value)} className="mt-1 w-full rounded border p-2 font-normal" required>
+                    <option value="">Selecciona un Gestor IDC activo</option>
+                    {localUsers.filter((candidate) => candidate.role === "coordinador_idc" && candidate.status === "activo" && candidate.id !== deactivationTarget.id)
+                      .map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.display_name}</option>)}
+                  </select>
+                </label>
+              )}
+              {deactivationTarget.role === "coordinador_idc" && deactivationTarget.responsible_count > 0 &&
+                !localUsers.some((candidate) => candidate.role === "coordinador_idc" && candidate.status === "activo" && candidate.id !== deactivationTarget.id) &&
+                <MessageBox tone="error">No hay otro Gestor IDC activo para recibir los expedientes.</MessageBox>}
+              <label className="block text-sm font-semibold">Motivo (mínimo 5 caracteres)
+                <textarea value={deactivationReason} onChange={(event) => setDeactivationReason(event.target.value)} maxLength={200} className="mt-1 w-full rounded border p-2 font-normal" rows={3} />
+              </label>
+              <div className="flex justify-end gap-2">
+                <SmallButton onClick={() => setDeactivationTarget(null)}>Cancelar</SmallButton>
+                <SmallButton
+                  disabled={deactivationReason.trim().length < 5 || (deactivationTarget.role === "coordinador_idc" && deactivationTarget.responsible_count > 0 && !reassignToId)}
+                  onClick={() => void change(deactivationTarget.id, "deactivate", deactivationReason, reassignToId)}
+                >Confirmar baja</SmallButton>
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     );
   }

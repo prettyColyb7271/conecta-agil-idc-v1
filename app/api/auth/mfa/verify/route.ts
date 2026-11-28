@@ -22,6 +22,7 @@ export async function POST(request: Request) {
     deleteMfaChallenge(token);
     const session = createSession(user.id);
     const now = new Date().toISOString();
+    getDatabase().prepare("UPDATE sessions SET mfa_recent_verified_at = ? WHERE id = ?").run(now, session.sessionId);
     getDatabase().prepare("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(now, now, user.id);
     auditEvent({ actorId: user.id, actorRole: user.role, eventType: "login_ok", entityType: "session", entityId: session.sessionId, metadata: { mfa: true, user_agent: request.headers.get("user-agent") ?? null } });
     const response = NextResponse.json({ role: user.role, name: user.display_name, mustChangePassword: user.must_change_password === 1 });

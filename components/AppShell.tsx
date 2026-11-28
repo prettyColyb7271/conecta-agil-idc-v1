@@ -12,13 +12,17 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
   cliente: [
     { href: "/portal", label: "Inicio" },
     { href: "/portal/formatos", label: "Formatos CFE" },
+    { href: "/cuenta", label: "Mi cuenta" },
+    { href: "/seguridad", label: "Mi seguridad" },
   ],
   coordinador_idc: [
     { href: "/gestor", label: "Inicio" },
     { href: "/gestor/proyectos", label: "Proyectos" },
     { href: "/gestor/usuarios", label: "Usuarios" },
+    { href: "/cuenta", label: "Mi cuenta" },
+    { href: "/seguridad", label: "Mi seguridad" },
   ],
-  gestor_tramites_cfe: [],
+  gestor_tramites_cfe: [{ href: "/seguridad", label: "Mi seguridad" }],
   admin_seguridad: [
     { href: "/admin", label: "Inicio" },
     { href: "/admin/usuarios", label: "Cuentas" },
@@ -27,7 +31,7 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
     { href: "/admin/accesos", label: "Auditoría" },
     { href: "/admin/integraciones", label: "Integraciones" },
     { href: "/admin/configuracion", label: "Configuración" },
-    { href: "/seguridad", label: "Seguridad de la cuenta" },
+    { href: "/seguridad", label: "Mi seguridad" },
   ],
 };
 

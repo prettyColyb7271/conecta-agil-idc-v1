@@ -1,9 +1,9 @@
 import type { TableName } from "@/lib/adapters/types";
 
 export const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
-  users: ["id", "email", "display_name", "role", "status", "password_hash", "email_verified_at", "created_at", "updated_at", "last_login_at"],
+  users: ["id", "email", "display_name", "apellidos", "telefono_contacto", "role", "status", "password_hash", "email_verified_at", "created_at", "updated_at", "last_login_at", "must_change_password"],
   account_requests: ["id", "email", "display_name", "status", "reviewed_by", "reviewed_at", "reason", "created_at", "user_id", "requested_role", "privacy_notice_version"],
-  sessions: ["id", "user_id", "session_token_hash", "expires_at", "revoked_at", "created_at", "last_seen_at"],
+  sessions: ["id", "user_id", "session_token_hash", "expires_at", "revoked_at", "created_at", "last_seen_at", "mfa_recent_verified_at"],
   expedientes: ["id", "folio", "tramite", "nivel_tension", "habilitado", "cliente_id", "gestor_id", "coordinador_id", "status", "data_json", "privacy_accepted_at", "privacy_accepted_version", "privacy_accepted_by", "created_at", "updated_at"],
   expediente_assignments: ["id", "expediente_id", "user_id", "assignment_type", "assigned_by", "starts_at", "ends_at", "created_at"],
   requirement_catalog: ["code", "group_code", "name", "source_ref", "required", "created_at", "tipo", "integra", "formato_code", "firma_fisica", "sensible", "reutiliza_code", "condicional", "validaciones"],
@@ -20,7 +20,9 @@ export const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   user_mfa: ["user_id", "secret_ciphertext", "secret_iv", "secret_auth_tag", "enabled_at", "last_used_step", "created_at", "updated_at"],
   mfa_backup_codes: ["id", "user_id", "code_hash", "used_at", "created_at"],
   mfa_login_challenges: ["id", "user_id", "token_hash", "expires_at", "attempts", "created_at"],
-  password_recovery_requests: ["id", "email", "status", "requested_at", "handled_by", "handled_at"],
+  password_recovery_requests: ["id", "email", "status", "requested_at", "handled_by", "handled_at", "account_exists"],
+  password_recovery_codes: ["id", "request_id", "user_id", "code_hash", "expires_at", "attempts", "status", "created_at", "used_at"],
+  recovery_rate_limits: ["id", "scope", "key_hash", "window_start", "attempts"],
   outbox: ["id", "event_type", "expediente_id", "payload_json", "status", "attempts", "last_error", "last_attempt_at", "zoho_id", "created_at"],
 };
 
@@ -45,6 +47,8 @@ export const TABLE_PRIMARY_KEYS: Record<TableName, string> = {
   mfa_backup_codes: "id",
   mfa_login_challenges: "id",
   password_recovery_requests: "id",
+  password_recovery_codes: "id",
+  recovery_rate_limits: "id",
   outbox: "id",
 };
 

@@ -86,7 +86,7 @@ try {
 
   console.log("== admin desvincula celular del gestor");
   const users = (await a2.get("/api/admin/users")).json?.users ?? [];
-  const gid = users.find((u) => u.email === "coordinador.demo@example.invalid")?.id;
+  const gid = users.find((u) => u.role === "coordinador_idc" && u.responsible_count > 0)?.id;
   ok("desvincular sin motivo → 400", (await a2.post("/api/admin/users", { action: "disable_mfa", userId: gid })).status === 400);
   const dis = await a2.post("/api/admin/users", { action: "disable_mfa", userId: gid, reason: "Celular extraviado" });
   ok("desvincular con motivo → 200", dis.status === 200, dis.text);
@@ -128,7 +128,7 @@ try {
   const r1 = await new S().post("/api/auth/recovery", { action: "request", email: "cliente.demo@example.invalid" });
   const r2 = await new S().post("/api/auth/recovery", { action: "request", email: "no.existe@example.invalid" });
   ok("correo existente e inexistente → mismo mensaje", r1.status === r2.status && (r1.json?.message ?? r1.json?.error) === (r2.json?.message ?? r2.json?.error), `${r1.text} | ${r2.text}`);
-  const cid = users.find((u) => u.email === "cliente.demo@example.invalid")?.id;
+  const cid = users.find((u) => u.role === "cliente" && u.display_name === "Cliente Demo Ficticio")?.id;
   const gen = await g3.post("/api/auth/recovery", { action: "generate", userId: cid });
   const tok = new URL(gen.json?.setupUrl ?? "http://x/?token=").searchParams.get("token");
   ok("Gestor IDC genera enlace de recuperación", gen.status === 200 && !!tok, gen.text);

@@ -38,18 +38,44 @@ export function migrateDatabase(): number {
   const applied = new Set(database.prepare("SELECT filename FROM schema_migrations").all().map((row) => String(row.filename)));
   const insertMigration = database.prepare("INSERT INTO schema_migrations (filename, checksum, applied_at) VALUES (?, ?, ?)");
   database.exec("BEGIN");
+  let transactionOpen = true;
+  let foreignKeysDisabled = false;
   try {
     for (const filename of files) {
       if (applied.has(filename)) continue;
       const sql = fs.readFileSync(path.join(migrationsDir, filename), "utf8");
-      insertMigration.run(filename, crypto.createHash("sha256").update(sql).digest("hex"), new Date().toISOString());
+      const checksum = crypto.createHash("sha256").update(sql).digest("hex");
+      if (filename === "012_a8b_contact_recovery_deactivation.sql") {
+        database.exec("COMMIT");
+        transactionOpen = false;
+        database.exec("PRAGMA foreign_keys = OFF;");
+        foreignKeysDisabled = true;
+        database.exec("BEGIN");
+        transactionOpen = true;
+        database.exec(sql);
+        const violations = database.prepare("PRAGMA foreign_key_check").all();
+        if (violations.length > 0) throw new Error("Migración 012 cancelada: la reconstrucción de users dejó referencias inválidas.");
+        insertMigration.run(filename, checksum, new Date().toISOString());
+        database.exec("COMMIT");
+        transactionOpen = false;
+        database.exec("PRAGMA foreign_keys = ON;");
+        foreignKeysDisabled = false;
+        database.exec("BEGIN");
+        transactionOpen = true;
+        continue;
+      }
+      insertMigration.run(filename, checksum, new Date().toISOString());
       if (filename === "004_flujo_firma_privacidad.sql" || filename === "007_paso7_eventos_externos.sql") {
         database.exec("COMMIT");
+        transactionOpen = false;
         database.exec("PRAGMA foreign_keys = OFF;");
+        foreignKeysDisabled = true;
         database.exec(sql);
         database.exec("PRAGMA foreign_key_check;");
         database.exec("PRAGMA foreign_keys = ON;");
+        foreignKeysDisabled = false;
         database.exec("BEGIN");
+        transactionOpen = true;
       } else {
         database.exec(sql);
       }
@@ -72,8 +98,10 @@ export function migrateDatabase(): number {
       }
     }
     database.exec("COMMIT");
+    transactionOpen = false;
   } catch (error) {
-    database.exec("ROLLBACK");
+    if (transactionOpen) database.exec("ROLLBACK");
+    if (foreignKeysDisabled) database.exec("PRAGMA foreign_keys = ON;");
     throw error;
   }
   return getSchemaVersion(database);

@@ -119,7 +119,7 @@ export const proyectos: {
   { folio: "IDC-2026-009", proyecto: "Paneles solares oficinas", cliente: "Despacho Ejemplo", tramite: "Interconexión FV MT", estatus: "entiempo", gate: 8, responsable: "Gestor IDC Demo" },
 ];
 
-export type EstadoUsuario = "pendiente" | "activo" | "bloqueado";
+export type EstadoUsuario = "pendiente" | "activo" | "bloqueado" | "baja";
 export const usuariosIniciales: { id: string; nombre: string; rol: Role; estado: EstadoUsuario }[] = [
   { id: "u1", nombre: "Prudencio Villa Buenaventura", rol: "cliente", estado: "pendiente" },
   { id: "u2", nombre: "Gestor IDC Demo", rol: "coordinador_idc", estado: "activo" },

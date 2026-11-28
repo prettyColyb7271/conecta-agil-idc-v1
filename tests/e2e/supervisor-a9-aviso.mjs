@@ -35,6 +35,7 @@ const failures = [];
 let server;
 let serverError;
 let serverExit;
+let db;
 
 function ok(name, condition, detail = "") {
   if (condition) {
@@ -132,10 +133,13 @@ try {
   ok("registro API rechaza una solicitud sin aceptación", missingRegistration.status === 400);
   const acceptedRegistration = await request("a9-con-aviso@example.invalid", { privacyAccepted: true, privacyVersion: avisoVersion });
   const acceptedBody = await acceptedRegistration.json();
-  const db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  db.exec("PRAGMA busy_timeout = 5000;");
   const savedVersion = db.prepare("SELECT privacy_notice_version FROM account_requests WHERE email = ?").get("a9-con-aviso@example.invalid");
   ok("registro API guarda la versión aceptada", acceptedRegistration.status === 201 &&
     acceptedBody.message && savedVersion?.privacy_notice_version === avisoVersion);
+  db.close();
+  db = null;
 
   const client = new Session();
   const manager = new Session();
@@ -165,20 +169,28 @@ try {
   ok("G0 sigue bloqueado hasta la aceptación", (await manager.post(`${endpoint}/gates`, { action: "close", gateCode: "G0" })).status === 409);
   must("aceptar la versión vigente", await client.post(`${endpoint}/privacy`, { version: avisoVersion }), 200);
   must("cerrar G0 tras la aceptación", await manager.post(`${endpoint}/gates`, { action: "close", gateCode: "G0" }), 200);
+  db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  db.exec("PRAGMA busy_timeout = 5000;");
   const before = db.prepare("SELECT gate_code, status FROM gates WHERE expediente_id = ? ORDER BY gate_code").all(created.id);
   db.prepare("UPDATE expedientes SET privacy_accepted_version = '0.0-anterior' WHERE id = ?").run(created.id);
+  db.close();
+  db = null;
   const changedPortal = await fetch(`${base}/portal`, { headers: { cookie: client.cookieHeader() } });
   const changedHtml = await changedPortal.text();
+  db = new DatabaseSync(path.join(dataDir, "conecta-agil.sqlite"));
+  db.exec("PRAGMA busy_timeout = 5000;");
   const after = db.prepare("SELECT gate_code, status FROM gates WHERE expediente_id = ? ORDER BY gate_code").all(created.id);
   ok("al detectar una versión anterior vuelve a pedir aceptación sin cambiar los Gates",
     changedPortal.status === 200 && changedHtml.includes("Hay una nueva versión del aviso de privacidad") &&
     JSON.stringify(before) === JSON.stringify(after) && after.find((gate) => gate.gate_code === "G0")?.status === "cerrado");
   db.close();
+  db = null;
 } catch (error) {
   console.error("Error en supervisor-a9-aviso:", error instanceof Error ? error.message : "fallo desconocido");
   fail += 1;
   failures.push("ejecución completa de A9");
 } finally {
+  db?.close();
   if (server && !server.killed) {
     server.kill();
     await new Promise((resolve) => setTimeout(resolve, 500));

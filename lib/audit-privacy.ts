@@ -11,6 +11,31 @@ export function maskEmail(value: string | null | undefined): string | null {
   return `${local.slice(0, 2)}***@${domain}`;
 }
 
+export function maskContactEmail(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const email = value.trim().toLowerCase();
+  const at = email.lastIndexOf("@");
+  if (at < 1 || at === email.length - 1) return null;
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const dot = domain.lastIndexOf(".");
+  const domainName = dot > 0 ? domain.slice(0, dot) : domain;
+  const suffix = dot > 0 ? domain.slice(dot) : "";
+  return `${[...local].slice(0, 2).join("")}•••@${[...domainName][0]}•••${suffix}`;
+}
+
+export function maskSurname(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return `${[...value.trim()][0]}•••`;
+}
+
+export function maskContactPhone(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 4) return null;
+  return `••• ••• ${digits.slice(-4, -2)} ${digits.slice(-2)}`;
+}
+
 export function truncateIp(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   let ip = value.split(",")[0].trim();

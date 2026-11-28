@@ -35,6 +35,8 @@ class MockDatabaseAdapter implements DatabaseAdapter {
       mfa_backup_codes: new Map(),
       mfa_login_challenges: new Map(),
       password_recovery_requests: new Map(),
+      password_recovery_codes: new Map(),
+      recovery_rate_limits: new Map(),
       outbox: new Map(),
     };
     this.seedFromMockData();

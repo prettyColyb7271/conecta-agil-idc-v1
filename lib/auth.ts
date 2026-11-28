@@ -22,7 +22,7 @@ export type AuthUser = {
   email: string;
   displayName: string;
   role: Role;
-  status: "pendiente" | "activo" | "bloqueado";
+  status: "pendiente" | "activo" | "bloqueado" | "baja";
   sessionId: string;
   mustChangePassword: boolean;
 };
@@ -195,6 +195,22 @@ export function verifyPassword(password: string, encoded: string): boolean {
     return "backup";
   }
 
+  export function verifyUserTotp(userId: string, code: string): boolean {
+    const row = getDatabase().prepare("SELECT secret_ciphertext, secret_iv, secret_auth_tag, last_used_step FROM user_mfa WHERE user_id = ? AND enabled_at IS NOT NULL").get(userId) as { secret_ciphertext: string; secret_iv: string; secret_auth_tag: string; last_used_step: number | null } | undefined;
+    if (!row) return false;
+    let secret: string;
+    try {
+      secret = decryptMfaSecret(row);
+    } catch {
+      auditEvent({ actorId: userId, eventType: "mfa_descifrado_fallido", entityType: "user_mfa", entityId: userId });
+      return false;
+    }
+    const step = verifyTotpCode(secret, code, row.last_used_step);
+    if (step === null) return false;
+    getDatabase().prepare("UPDATE user_mfa SET last_used_step = ?, updated_at = ? WHERE user_id = ?").run(step, new Date().toISOString(), userId);
+    return true;
+  }
+
   export function createMfaChallenge(userId: string): { token: string; expiresAt: string } {
     const token = crypto.randomBytes(32).toString("base64url");
     const now = new Date();
@@ -227,9 +243,8 @@ export function generateTemporaryPassword(): string {
 }
 
 export function passwordChangeRequired(user: AuthUser | null): NextResponse | null {
-  return user?.mustChangePassword
-    ? NextResponse.json({ error: "Debes cambiar tu contraseña" }, { status: 403 })
-    : null;
+  if (user?.mustChangePassword) return NextResponse.json({ error: "Debes cambiar tu contraseña" }, { status: 403 });
+  return mfaRequiredResponse(user);
 }
 
 export function hashToken(token: string): string {
