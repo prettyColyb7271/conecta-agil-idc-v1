@@ -37,11 +37,11 @@ La captura de Seguridad se volvió a tomar en modo demo a 1366×768 con AppShell
 
 La decisión de privacidad se mantiene: las cuentas asociadas no conservan correo en metadata; los intentos sin cuenta conservan el correo enmascarado; las IP se truncan y el `user-agent` se elimina. La migración 010 usa `maskEmail` y `truncateIp`, modifica solo `metadata_json` y deja intactos el resto de columnas y eventos. No guardar la IP completa implica que no puede bloquearse desde la bitácora; ese control corresponde al firewall o proxy.
 
-La regresión aislada cubre eventos históricos con y sin `actor_id`, repetición de `db:migrate`, conservación de columnas/eventos y migración sobre una base ficticia con todas las tablas pobladas. `migration-010-with-data` pasó 4/0 y `supervisor-a7-admin` pasó 38/0. En la base local, la migración minimizó **28 filas**; el reporte registra solo el conteo, nunca su contenido.
+Commit de implementación A7c: `f6ade30`. La regresión aislada cubre eventos históricos con y sin `actor_id`, repetición de `db:migrate`, conservación de columnas/eventos y migración sobre una base ficticia con todas las tablas pobladas. `migration-010-with-data` pasó 4/0 y `supervisor-a7-admin` pasó 38/0. En la base local, la migración minimizó **28 filas**; el reporte registra solo el conteo, nunca su contenido.
 
 ## Regla 2 y verificación visual · A7b/A7c
 
-La regla 2 de A7b se ejecutó en la copia aislada `paso-a7b-validation`, preparada con `npm ci`. El worktree no recibió `.env.local`; Zoho se forzó a `file` y las credenciales externas de prueba quedaron vacías.
+La regla 2 de A7b se ejecutó en la copia aislada `paso-a7b-validation`, preparada con `npm ci`. Para A7c se usó `paso-a7c-validation`, también con `npm ci`; el worktree no recibió `.env.local`, Zoho se forzó a `file` y las credenciales externas de prueba quedaron vacías.
 
 | Verificación | Resultado |
 |---|---|
