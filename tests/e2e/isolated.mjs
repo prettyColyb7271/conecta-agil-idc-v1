@@ -61,6 +61,7 @@ try {
 
   await run("regresiones-pr1", [tsx, "tests/e2e/regresiones-pr1.ts"]);
   await run("migration-004-with-data", [tsx, "tests/e2e/migration-004-with-data.mjs"]);
+  await run("migration-010-with-data", ["tests/e2e/migration-010-with-data.mjs"]);
   await run("supervisor-a0-runner", ["tests/e2e/supervisor-a0-runner.mjs"]);
   const migrated = await run("db-migrate", [tsx, "scripts/db-migrate.ts"]);
   let seeded = false;

@@ -261,7 +261,7 @@ try {
   server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(port)], { cwd: root, env, stdio: "ignore" });
   await waitFor(async () => (await fetch(`${base}/api/health`).then((response) => response.ok).catch(() => false)), "No inició el servidor aislado A4.");
   const health = await fetch(`${base}/api/health`).then((response) => response.json());
-  ok("schemaVersion 9 activo en health", health.schemaVersion === 9, String(health.schemaVersion));
+  ok("schemaVersion 10 activo en health", health.schemaVersion === 10, String(health.schemaVersion));
 
   const client = await login("cliente.demo@example.invalid", seeded.password);
   const manager = await login("coordinador.demo@example.invalid", seeded.password);
@@ -431,8 +431,9 @@ try {
   execFileSync(process.execPath, [tsx, "scripts/db-migrate.ts"], { cwd: root, env: { ...env, LOCAL_DATA_DIR: migrationDir }, stdio: "ignore" });
   const migratedDatabase = new DatabaseSync(migrationCopy, { readOnly: true });
   const version = migratedDatabase.prepare("SELECT filename FROM schema_migrations ORDER BY filename DESC LIMIT 1").get()?.filename;
+  const outboxMigration = migratedDatabase.prepare("SELECT filename FROM schema_migrations WHERE filename = '009_outbox.sql'").get();
   const outboxExists = migratedDatabase.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'outbox'").get();
-  ok("db:migrate sube a 9 sobre una base existente y conserva sus datos", version === "009_outbox.sql" && Boolean(outboxExists) &&
+  ok("db:migrate restaura outbox en una base existente y conserva sus datos (schemaVersion 10)", version === "010_audit_events_privacidad.sql" && Boolean(outboxMigration) && Boolean(outboxExists) &&
     Number(migratedDatabase.prepare("SELECT COUNT(*) AS count FROM users").get().count) === usersBefore &&
     Number(migratedDatabase.prepare("SELECT COUNT(*) AS count FROM expedientes").get().count) === expedientesBefore);
   migratedDatabase.close();

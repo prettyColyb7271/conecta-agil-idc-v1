@@ -352,7 +352,7 @@ try {
   server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(appPort)], { cwd: root, env, stdio: "ignore" });
   await waitFor(async () => (await fetch(`${base}/api/health`).then((response) => response.ok).catch(() => false)), "No inició el servidor aislado del simulador Zoho.");
   const health = await fetch(`${base}/api/health`).then((response) => response.json());
-  ok("servidor del simulador A4 usa schemaVersion 9", health.schemaVersion === 9);
+  ok("servidor del simulador A4 usa schemaVersion 10", health.schemaVersion === 10);
 
   const client = await login("cliente.demo@example.invalid", seeded.password);
   const manager = await login("coordinador.demo@example.invalid", seeded.password);

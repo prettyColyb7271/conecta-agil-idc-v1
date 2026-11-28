@@ -2,6 +2,17 @@
 
 Este procedimiento es para la dueña del proyecto. No compartas valores de `.env.local` por chat, correo, capturas ni commits. Usa únicamente cuentas ficticias para verificar cambios y nunca ejecutes scripts de rotación contra una copia de validación que contenga datos reales.
 
+## Bitácora de accesos: minimización de datos
+
+La bitácora guarda solo lo necesario para detectar y revisar intentos de acceso:
+
+- Si el evento tiene una cuenta asociada (`actor_id`), no conserva un correo en `metadata_json`; la pantalla identifica la cuenta por su nombre.
+- Si la cuenta no existe, conserva el correo enmascarado con `maskEmail` para reconocer intentos repetidos sin exponer la dirección completa.
+- La dirección IP se trunca con `truncateIp`. No se guarda ni se muestra el `user-agent`.
+- La migración 010 minimiza del mismo modo los eventos históricos, cambiando únicamente `metadata_json`; preserva los demás campos de la bitácora y sus eventos.
+
+Esta decisión aplica el principio de minimización de datos personales para el piloto. El costo aceptado es que la bitácora no permite bloquear una IP exacta; si se necesita ese control, se configura en el firewall o el proxy, no se conserva la dirección completa en la bitácora.
+
 ## Clave de cifrado MFA
 
 La rotación re-cifra los secretos TOTP existentes con un IV nuevo por usuario. Mantiene el vínculo de OneAuth, `last_used_step` y los códigos de respaldo. Antes de actualizar la base, el script crea una copia en `LOCAL_DATA_DIR\respaldos\` con el nombre `antes-rotacion-mfa-<fecha>.sqlite`.

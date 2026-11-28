@@ -88,6 +88,108 @@ function runTsx(script) {
   execFileSync(process.execPath, [tsx, script], { cwd: root, env, stdio: "ignore" });
 }
 
+function migrateLegacyAuditFixtures() {
+  const migration = "010_audit_events_privacidad.sql";
+  const database = new DatabaseSync(databasePath);
+  const ids = database.prepare(`
+    SELECT
+      (SELECT id FROM users WHERE email = 'coordinador.demo@example.invalid') AS actor_id
+  `).get();
+  if (!ids.actor_id) throw new Error("No se encontró el gestor ficticio para la migración A7c.");
+
+  const fixtures = [
+    {
+      id: crypto.randomUUID(),
+      actorId: null,
+      eventType: "a7c_legacy_unknown_v4",
+      metadata: { email: "legacy.unknown@example.invalid", ip: "192.168.56.123", user_agent: "A7C_LEGACY_AGENT", retained: "unknown" },
+    },
+    {
+      id: crypto.randomUUID(),
+      actorId: ids.actor_id,
+      eventType: "a7c_legacy_known_v6",
+      metadata: { email: "coordinador.demo@example.invalid", ip: "2001:0db8:85a3::8a2e:0370:7334", user_agent: "A7C_LEGACY_AGENT", retained: "known" },
+    },
+    {
+      id: crypto.randomUUID(),
+      actorId: null,
+      eventType: "a7c_legacy_invalid_values",
+      metadata: { email: "invalid-email", ip: "invalid-ip", user_agent: "A7C_LEGACY_AGENT", retained: "invalid" },
+    },
+  ];
+  const control = {
+    id: crypto.randomUUID(),
+    actorId: null,
+    eventType: "a7c_migration_control",
+    metadata: { retained: "unchanged" },
+  };
+  const insert = database.prepare(`
+    INSERT INTO audit_events (id, actor_id, actor_role, event_type, entity_type, entity_id, metadata_json, created_at)
+    VALUES (?, ?, ?, ?, 'user', ?, ?, ?)
+  `);
+  for (const fixture of [...fixtures, control]) {
+    insert.run(
+      fixture.id,
+      fixture.actorId,
+      fixture.actorId ? "coordinador_idc" : null,
+      fixture.eventType,
+      fixture.id,
+      JSON.stringify(fixture.metadata),
+      "2026-11-27T12:00:00.000Z",
+    );
+  }
+  database.prepare("DELETE FROM schema_migrations WHERE filename = ?").run(migration);
+  const beforeFields = database.prepare(`
+    SELECT id, actor_id, actor_role, event_type, entity_type, entity_id, expediente_id, created_at
+    FROM audit_events ORDER BY id
+  `).all();
+  const beforeCount = Number(database.prepare("SELECT COUNT(*) AS count FROM audit_events").get().count);
+  database.close();
+
+  runTsx("scripts/db-migrate.ts");
+
+  const migrated = new DatabaseSync(databasePath);
+  const readMetadata = migrated.prepare("SELECT metadata_json FROM audit_events WHERE id = ?");
+  const firstResults = new Map([...fixtures, control].map((fixture) => [fixture.id, JSON.parse(readMetadata.get(fixture.id).metadata_json)]));
+  const afterFields = migrated.prepare(`
+    SELECT id, actor_id, actor_role, event_type, entity_type, entity_id, expediente_id, created_at
+    FROM audit_events ORDER BY id
+  `).all();
+  const afterCount = Number(migrated.prepare("SELECT COUNT(*) AS count FROM audit_events").get().count);
+  const migrationRecorded = Number(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE filename = ?").get(migration)?.count ?? 0) === 1;
+  const fieldsUnchanged = JSON.stringify(beforeFields) === JSON.stringify(afterFields) &&
+    beforeCount === afterCount &&
+    JSON.stringify(firstResults.get(control.id)) === JSON.stringify(control.metadata);
+  migrated.close();
+
+  const unknown = firstResults.get(fixtures[0].id);
+  const known = firstResults.get(fixtures[1].id);
+  const invalid = firstResults.get(fixtures[2].id);
+  const minimized = migrationRecorded &&
+    unknown.email === "le***@example.invalid" &&
+    unknown.ip === "192.168.56.x" &&
+    !Object.hasOwn(unknown, "user_agent") &&
+    unknown.retained === "unknown" &&
+    !Object.hasOwn(known, "email") &&
+    known.ip === "2001:x" &&
+    !Object.hasOwn(known, "user_agent") &&
+    known.retained === "known" &&
+    !Object.hasOwn(invalid, "email") &&
+    !Object.hasOwn(invalid, "ip") &&
+    !Object.hasOwn(invalid, "user_agent") &&
+    invalid.retained === "invalid";
+
+  const firstMetadata = new Map([...fixtures, control].map((fixture) => [fixture.id, JSON.stringify(firstResults.get(fixture.id))]));
+  runTsx("scripts/db-migrate.ts");
+  const repeated = new DatabaseSync(databasePath);
+  const repeatedReadMetadata = repeated.prepare("SELECT metadata_json FROM audit_events WHERE id = ?");
+  const repeatedMetadata = new Map([...fixtures, control].map((fixture) => [fixture.id, String(repeatedReadMetadata.get(fixture.id)?.metadata_json ?? "")]));
+  repeated.close();
+  const idempotent = [...firstMetadata].every(([id, metadata]) => repeatedMetadata.get(id) === metadata);
+
+  return { minimized, fieldsUnchanged, idempotent };
+}
+
 function totp(secret) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = 0;
@@ -262,6 +364,10 @@ async function login(email) {
 try {
   runTsx("scripts/db-migrate.ts");
   runTsx("scripts/db-seed.ts");
+  const legacyAudit = migrateLegacyAuditFixtures();
+  ok("A7c minimiza tres formatos antiguos de bitácora usando reglas seguras", legacyAudit.minimized);
+  ok("A7c preserva los demás campos, el evento de control y el número de eventos", legacyAudit.fieldsUnchanged);
+  ok("A7c conserva el resultado al volver a ejecutar db:migrate", legacyAudit.idempotent);
   await startServer();
 
   const adminLogin = await login("seguridad.demo@example.invalid");

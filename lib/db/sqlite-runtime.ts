@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { getLocalDataDir } from "@/lib/adapters/runtime-config";
+import { maskEmail, truncateIp } from "@/lib/audit-privacy";
 
 let singleton: DatabaseSync | null = null;
 let singletonPath: string | null = null;
@@ -52,6 +53,23 @@ export function migrateDatabase(): number {
       } else {
         database.exec(sql);
       }
+      if (filename === "010_audit_events_privacidad.sql") {
+        database.exec("DROP TRIGGER IF EXISTS audit_events_append_only_update; DROP TRIGGER IF EXISTS audit_events_append_only_delete;");
+        const minimizedRows = minimizeLegacyAuditMetadata(database);
+        database.exec(`
+          CREATE TRIGGER IF NOT EXISTS audit_events_append_only_update
+          BEFORE UPDATE ON audit_events
+          BEGIN
+            SELECT RAISE(ABORT, 'audit_events es append-only');
+          END;
+          CREATE TRIGGER IF NOT EXISTS audit_events_append_only_delete
+          BEFORE DELETE ON audit_events
+          BEGIN
+            SELECT RAISE(ABORT, 'audit_events es append-only');
+          END;
+        `);
+        console.log(`Migración 010: ${minimizedRows} filas de bitácora minimizadas.`);
+      }
     }
     database.exec("COMMIT");
   } catch (error) {
@@ -59,6 +77,73 @@ export function migrateDatabase(): number {
     throw error;
   }
   return getSchemaVersion(database);
+}
+
+function minimizeLegacyAuditMetadata(database: DatabaseSync): number {
+  const rows = database.prepare("SELECT id, actor_id, metadata_json FROM audit_events").all() as Array<{
+    id: string;
+    actor_id: string | null;
+    metadata_json: string;
+  }>;
+  const updateMetadata = database.prepare("UPDATE audit_events SET metadata_json = ? WHERE id = ?");
+  let updatedRows = 0;
+
+  for (const row of rows) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.metadata_json);
+    } catch {
+      throw new Error("Migración 010 cancelada: metadata_json contiene un valor inválido.");
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("Migración 010 cancelada: metadata_json no es un objeto.");
+    }
+
+    const metadata = parsed as Record<string, unknown>;
+    let changed = false;
+    if (Object.prototype.hasOwnProperty.call(metadata, "email")) {
+      if (row.actor_id !== null) {
+        delete metadata.email;
+        changed = true;
+      } else {
+        const email = maskEmail(typeof metadata.email === "string" ? metadata.email : null);
+        if (email) {
+          if (metadata.email !== email) {
+            metadata.email = email;
+            changed = true;
+          }
+        } else {
+          delete metadata.email;
+          changed = true;
+        }
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(metadata, "ip")) {
+      const ip = truncateIp(typeof metadata.ip === "string" ? metadata.ip : null);
+      if (ip) {
+        if (metadata.ip !== ip) {
+          metadata.ip = ip;
+          changed = true;
+        }
+      } else {
+        delete metadata.ip;
+        changed = true;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(metadata, "user_agent")) {
+      delete metadata.user_agent;
+      changed = true;
+    }
+
+    if (changed) {
+      updateMetadata.run(JSON.stringify(metadata), row.id);
+      updatedRows += 1;
+    }
+  }
+
+  return updatedRows;
 }
 
 export function getSchemaVersion(database = getDatabase()): number {
