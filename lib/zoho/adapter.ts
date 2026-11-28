@@ -82,7 +82,8 @@ async function accessToken(): Promise<string> {
   const clientSecret = process.env.ZOHO_CLIENT_SECRET?.trim();
   const refreshToken = process.env.ZOHO_REFRESH_TOKEN?.trim();
   if (!clientId || !clientSecret || !refreshToken) throw new Error("ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET y ZOHO_REFRESH_TOKEN son obligatorios para el transporte api.");
-  const accountsUrl = `https://accounts.zoho.${dataCenterDomain()}/oauth/v2/token`;
+  const accountsRoot = process.env.ZOHO_ACCOUNTS_URL?.trim().replace(/\/+$/, "") || `https://accounts.zoho.${dataCenterDomain()}`;
+  const accountsUrl = `${accountsRoot}/oauth/v2/token`;
   const body = new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken });
   let response: Response;
   try {
@@ -113,9 +114,13 @@ async function zohoRequest(url: string, token: string, body: URLSearchParams): P
 
 function responseTaskId(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
-  const data = value as { tasks?: Array<{ id?: string | number }> };
-  const id = data.tasks?.[0]?.id;
-  return typeof id === "string" || typeof id === "number" ? String(id) : null;
+  const tasks = (value as { tasks?: unknown }).tasks;
+  if (!Array.isArray(tasks) || !tasks[0] || typeof tasks[0] !== "object") return null;
+  const task = tasks[0] as { id?: unknown; id_string?: unknown };
+  if (typeof task.id_string === "string" && /^\d+$/.test(task.id_string)) return task.id_string;
+  if (typeof task.id === "string" && /^\d+$/.test(task.id)) return task.id;
+  if (typeof task.id === "number" && Number.isSafeInteger(task.id) && task.id >= 0) return String(task.id);
+  return null;
 }
 
 function description(snapshot: ZohoSnapshot, gate: ZohoSnapshot["tasks"][number]): string {
@@ -136,7 +141,8 @@ async function sendToApi(row: OutboxRow, snapshot: ZohoSnapshot): Promise<string
   if (!portal || !project) throw new Error("ZOHO_PORTAL_ID y ZOHO_PROJECT_ID son obligatorios para el transporte api.");
   const token = await accessToken();
   const domain = dataCenterDomain();
-  const root = `https://projectsapi.zoho.${domain}/restapi/portal/${encodeURIComponent(portal)}/projects/${encodeURIComponent(project)}/tasks`;
+  const projectsApiRoot = process.env.ZOHO_PROJECTS_API_URL?.trim().replace(/\/+$/, "") || `https://projectsapi.zoho.${domain}`;
+  const root = `${projectsApiRoot}/restapi/portal/${encodeURIComponent(portal)}/projects/${encodeURIComponent(project)}/tasks`;
   const previous = getDatabase().prepare(`
     SELECT zoho_id FROM outbox WHERE expediente_id = ? AND id != ? AND zoho_id IS NOT NULL
     ORDER BY created_at DESC, rowid DESC LIMIT 1
