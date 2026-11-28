@@ -106,6 +106,8 @@ try {
     ["supervisor-zoho-api", ["tests/e2e/supervisor-zoho-api.mjs", root], false],
     ["supervisor-mfa-rotacion", ["tests/e2e/supervisor-mfa-rotacion.mjs", root], false],
     ["supervisor-a7-admin", ["tests/e2e/supervisor-a7-admin.mjs", root], false],
+    ["supervisor-a5-demo", ["tests/e2e/supervisor-a5-demo.mjs", root], false],
+    ["supervisor-a5-zoho", ["tests/e2e/supervisor-a5-zoho.mjs", root], false],
   ];
   for (const [name, args, needsSharedServer] of suites) {
     if (needsSharedServer && !ready) skip(name, "servidor compartido no disponible");
