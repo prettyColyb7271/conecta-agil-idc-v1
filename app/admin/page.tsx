@@ -1,14 +1,20 @@
-// Pantalla de marcador: bloqueos, sesiones, e incidentes se construyen en la Fase 6.
 import { requireRole } from "@/lib/auth";
+import { getAppMode } from "@/lib/adapters/config";
+import { getAdminDashboardData, getDemoAdminDashboardData } from "@/lib/admin/dashboard";
+import { MessageBox } from "@/components/ui";
+import AdminDashboard from "@/components/AdminInicio";
 
 export const instant = false;
 
 export default async function AdminInicio() {
   await requireRole("admin_seguridad");
-  return (
-    <section className="rounded-sm bg-[#b6cde3] p-6 text-center text-[#0d1f33]">
-      <h2 className="text-xl font-bold">Administración de seguridad</h2>
-      <p className="mt-2 text-sm">Disponible en la Fase 6: bloqueo de cuentas, revocación de sesiones y auditoría de metadatos.</p>
-    </section>
-  );
+  if (getAppMode() === "demo") return <AdminDashboard data={getDemoAdminDashboardData()} />;
+  let data;
+  try {
+    data = getAdminDashboardData();
+  } catch (error) {
+    console.error("No fue posible consultar el tablero de seguridad.", error);
+    return <MessageBox tone="error">No fue posible cargar el tablero de seguridad.</MessageBox>;
+  }
+  return <AdminDashboard data={data} />;
 }
