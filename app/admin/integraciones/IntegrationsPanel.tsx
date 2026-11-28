@@ -96,6 +96,23 @@ export default function IntegrationsPanel({ transport, entries, projects, exampl
       {example && <MessageBox tone="warning">Datos ficticios para demostración. No se consulta la outbox ni se realizan envíos.</MessageBox>}
       <MessageBox>La sincronización es de un solo sentido: la plataforma decide y Zoho muestra. Solo se envían metadatos de tareas; documentos y observaciones internas permanecen en la aplicación.</MessageBox>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Panel title="Zoho CRM">
+          <div className="flex items-center justify-between gap-3 rounded bg-white p-3">
+            <p className="text-sm">Integración no configurada.</p>
+            <StatusBadge>No configurado</StatusBadge>
+          </div>
+          <p className="mt-2 text-xs text-slate-700">Nunca se exponen tokens.</p>
+        </Panel>
+        <Panel title="Zoho Desk">
+          <div className="flex items-center justify-between gap-3 rounded bg-white p-3">
+            <p className="text-sm">Integración no configurada.</p>
+            <StatusBadge>No configurado</StatusBadge>
+          </div>
+          <p className="mt-2 text-xs text-slate-700">Nunca se exponen tokens.</p>
+        </Panel>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         {groups.map(([status, title]) => {
           const matching = entries.filter((entry) => entry.status === status);
